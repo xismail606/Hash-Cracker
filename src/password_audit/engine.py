@@ -68,14 +68,16 @@ def clamp_workers(workers: int) -> int:
     return workers
 
 
-def _hash_batch(batch: list[str], algorithm: str, target: str) -> tuple[int, str] | None:
+def _hash_batch(
+    batch: list[str], algorithm: str, target: str, salt: str | None = None
+) -> tuple[int, str] | None:
     """Hash every candidate in a batch; return (index, plaintext) on a match.
 
     This runs inside worker processes and must stay a module-level function
     so it can be pickled with the spawn start method on Windows.
     """
     for index, candidate in enumerate(batch):
-        if hash_candidate(candidate, algorithm) == target:
+        if hash_candidate(candidate, algorithm, salt) == target:
             return index, candidate
     return None
 
@@ -88,6 +90,7 @@ def run_audit(
     workers: int = DEFAULT_WORKERS,
     budget: int | None = None,
     total_space: int | None = None,
+    salt: str | None = None,
     cancel_event: Any = None,
     progress_callback: Callable[[int, int, float | None], None] | None = None,
 ) -> RunResult:
@@ -104,6 +107,8 @@ def run_audit(
     ``cancel_event`` is a ``threading.Event``-like object checked between
     batch submissions and completions.
     """
+    if not salt:
+        salt = None  # normalize empty-string salts from form inputs to None
     workers = clamp_workers(workers)
     if budget is None:
         budget = DEFAULT_BUDGET if total_space is not None else None
@@ -164,7 +169,7 @@ def run_audit(
                     break
                 offset = submitted
                 submitted += len(batch)
-                future = executor.submit(_hash_batch, batch, algorithm, target_hash)
+                future = executor.submit(_hash_batch, batch, algorithm, target_hash, salt)
                 pending[future] = (len(batch), offset)
 
             if cancelled or matched is not None or not pending:

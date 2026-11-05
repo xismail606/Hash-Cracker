@@ -19,6 +19,14 @@ ALGORITHM_NAMES = (
     "sha512",
     "md4",
     "lm",
+    "md5_pass_salt",
+    "md5_salt_pass",
+    "sha1_pass_salt",
+    "sha1_salt_pass",
+    "sha256_pass_salt",
+    "sha256_salt_pass",
+    "sha512_pass_salt",
+    "sha512_salt_pass",
 )
 
 # Digest length in hexadecimal characters per supported algorithm.
@@ -32,10 +40,20 @@ ALGORITHM_LENGTHS = {
     "sha512": 128,
     "md4": 32,
     "lm": 16,
+    "md5_pass_salt": 32,
+    "md5_salt_pass": 32,
+    "sha1_pass_salt": 40,
+    "sha1_salt_pass": 40,
+    "sha256_pass_salt": 64,
+    "sha256_salt_pass": 64,
+    "sha512_pass_salt": 128,
+    "sha512_salt_pass": 128,
 }
 
 # Algorithms compatible with each hexadecimal digest length. Note that a
 # 32-character shape maps to three supported algorithms (MD5, NTLM, and MD4).
+# Salted formats are selected explicitly by name (shape identification lists
+# only the unsalted base formats).
 ALGORITHMS_BY_LENGTH = {
     16: ("lm",),
     32: ("md5", "ntlm", "md4"),
@@ -45,6 +63,26 @@ ALGORITHMS_BY_LENGTH = {
     96: ("sha384",),
     128: ("sha512",),
 }
+
+# Salted formats: name -> (base digest algorithm, salt position relative to
+# the candidate). hashcat modes: md5_pass_salt=10, md5_salt_pass=20,
+# sha1_pass_salt=110, sha1_salt_pass=120, sha256_pass_salt=1410,
+# sha256_salt_pass=1420, sha512_pass_salt=1710, sha512_salt_pass=1720.
+SALTED_ALGORITHMS = {
+    "md5_pass_salt": ("md5", "pass_salt"),
+    "md5_salt_pass": ("md5", "salt_pass"),
+    "sha1_pass_salt": ("sha1", "pass_salt"),
+    "sha1_salt_pass": ("sha1", "salt_pass"),
+    "sha256_pass_salt": ("sha256", "pass_salt"),
+    "sha256_salt_pass": ("sha256", "salt_pass"),
+    "sha512_pass_salt": ("sha512", "pass_salt"),
+    "sha512_salt_pass": ("sha512", "salt_pass"),
+}
+
+
+def is_salted(algorithm: str) -> bool:
+    """Return True when the algorithm needs a user-supplied salt."""
+    return algorithm in SALTED_ALGORITHMS
 
 
 class HashInputError(ValueError):
@@ -142,7 +180,9 @@ def select_algorithm(value: str, algorithm: str | None) -> tuple[HashAssessment,
             f"The hash does not match the {algorithm} format: expected "
             f"{expected} hexadecimal characters, got {len(assessment.normalized)}."
         )
-    if algorithm not in assessment.compatible_algorithms:
+    # Salted formats share their base digest's shape but are opt-in explicit
+    # selections, so the shape-compatibility check does not apply to them.
+    if algorithm not in assessment.compatible_algorithms and not is_salted(algorithm):
         raise HashInputError(
             f"The hash shape is not compatible with {algorithm}. Compatible "
             f"formats for this shape: {', '.join(assessment.compatible_algorithms)}."

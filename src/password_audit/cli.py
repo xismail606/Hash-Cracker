@@ -23,6 +23,7 @@ from .algorithms import (
     ALGORITHM_NAMES,
     HashInputError,
     assess_hash,
+    is_salted,
     select_algorithm,
 )
 from .bruteforce import (
@@ -130,6 +131,18 @@ def cmd_audit(args: argparse.Namespace) -> int:
         return EXIT_INVALID
     target_hash = assessment.normalized
 
+    salt = getattr(args, "salt", None)
+    if is_salted(algorithm) and not salt:
+        print(
+            f"Salted format {algorithm} requires --salt VALUE "
+            "(the known salt stored alongside the hash).",
+            file=sys.stderr,
+        )
+        return EXIT_INVALID
+    if salt and not is_salted(algorithm):
+        print(f"Algorithm {algorithm} does not take a salt; remove --salt.", file=sys.stderr)
+        return EXIT_INVALID
+
     try:
         workers = clamp_workers(args.workers)
     except EngineInputError as exc:
@@ -200,6 +213,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
             workers=workers,
             budget=budget,
             total_space=total_space,
+            salt=salt,
             cancel_event=cancel_event,
             progress_callback=progress,
         )
@@ -238,6 +252,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
             matched_plaintext=(
                 result.matched_plaintext if result.status == STATUS_MATCH else None
             ),
+            salt=salt,
         )
         conn.close()
     except HistoryError as exc:
@@ -364,6 +379,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Candidate source mode",
     )
     p_audit.add_argument("--wordlist", help="Local wordlist path (dictionary mode)")
+    p_audit.add_argument(
+        "--salt",
+        help="Salt value for salted formats such as md5_pass_salt (required for them)",
+    )
     p_audit.add_argument(
         "--charset",
         help="Brute-force alphabet: preset names (lower, upper, digits, symbols) "

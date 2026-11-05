@@ -7,7 +7,8 @@ The commands below are the planned v1 interface; final option spelling is confir
 ```text
 python -m password_audit identify HASH
 python -m password_audit audit HASH --algorithm NAME --mode dictionary --wordlist PATH [--workers N]
-python -m password_audit audit HASH --algorithm NAME --mode brute-force --charset PRESET_OR_TEXT --min-length N --max-length N [--max-candidates N] [--workers N]
+python -m password_audit audit HASH --algorithm NAME [--salt VALUE] --mode dictionary --wordlist PATH [--workers N]
+python -m password_audit audit HASH --algorithm NAME [--salt VALUE] --mode brute-force --charset PRESET_OR_TEXT --min-length N --max-length N [--max-candidates N] [--workers N]
 python -m password_audit history [--database PATH]
 python -m password_audit export PATH [--format csv|json]
 python -m password_audit serve [--port PORT]
@@ -20,6 +21,17 @@ python -m password_audit serve [--port PORT]
 - Report MD5/NTLM/MD4 as ambiguous for a 32-character hexadecimal input and require the operator to choose before auditing.
 - Reject malformed or unsupported shapes with a clear message.
 - Do not start candidate processing.
+
+### Salted Formats
+
+- Eight salted fast-hash formats are supported with an operator-supplied salt:
+  `md5_pass_salt` (hashcat 10), `md5_salt_pass` (20), `sha1_pass_salt` (110),
+  `sha1_salt_pass` (120), `sha256_pass_salt` (1410), `sha256_salt_pass` (1420),
+  `sha512_pass_salt` (1710), and `sha512_salt_pass` (1720).
+- They require `--salt VALUE` (the known salt stored alongside the hash) and
+  reject `--salt` on unsalted formats. Shape identification lists only the
+  unsalted base formats; salted formats are selected explicitly by name.
+- The salt is stored in the audit record so reports can reproduce the audit.
 
 ### LM
 

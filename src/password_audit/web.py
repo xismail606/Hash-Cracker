@@ -24,7 +24,13 @@ from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from .algorithms import ALGORITHM_NAMES, ALGORITHM_LENGTHS, HashInputError, assess_hash
+from .algorithms import (
+    ALGORITHM_LENGTHS,
+    ALGORITHM_NAMES,
+    HashInputError,
+    assess_hash,
+    is_salted,
+)
 from .bruteforce import (
     DEFAULT_BUDGET,
     HARD_MAX_BUDGET,
@@ -34,7 +40,15 @@ from .bruteforce import (
 )
 from .candidates import iter_wordlist_batches
 from .engine import DEFAULT_WORKERS, MAX_WORKERS, STATUS_MATCH, run_audit
-from .history import HistoryError, clear_runs, connect, list_runs, record_run, utc_now
+from .history import (
+    DEFAULT_DB_PATH,
+    HistoryError,
+    clear_runs,
+    connect,
+    list_runs,
+    record_run,
+    utc_now,
+)
 
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MiB
 UPLOAD_CHUNK = 1024 * 1024
@@ -68,8 +82,18 @@ class DashboardJob:
         self.lock = threading.Lock()
 
 
-def create_app(static_folder: str | Path | None = None) -> Flask:
-    """Create the local dashboard Flask application."""
+def create_app(
+    static_folder: str | Path | None = None,
+    db_path: str | Path | None = None,
+) -> Flask:
+    """Create the local dashboard Flask application.
+
+    ``db_path`` overrides the SQLite history location (used by tests and the
+    CLI ``--database`` flag); ``None`` uses the default user-local path.
+    """
+    if not db_path:
+        db_path = DEFAULT_DB_PATH
+    db_path = str(db_path)
     if static_folder is None:
         static_folder = Path(__file__).parent / "static"
     app = Flask(
@@ -184,13 +208,14 @@ def create_app(static_folder: str | Path | None = None) -> Flask:
             return None, f"Worker count must be between 1 and {MAX_WORKERS}."
         return {"target": assessment.normalized, "workers": workers}, None
 
-    def _start_job(params: dict, mode: str, batch_source, budget, total_space, temp_path) -> tuple[DashboardJob | None, dict | None]:
+    def _start_job(params: dict, mode: str, batch_source, budget, total_space, temp_path, salt=None) -> tuple[DashboardJob | None, dict | None]:
         job = DashboardJob(job_id=uuid.uuid4().hex)
         job.target_hash = params["target"]
         job.algorithm = params["algorithm"]
         job.mode = mode
         job.workers = params["workers"]
         job.budget = budget
+        job.salt = salt
         job.temp_path = temp_path
         job.started_at = utc_now()
 
@@ -205,6 +230,7 @@ def create_app(static_folder: str | Path | None = None) -> Flask:
                     workers=job.workers,
                     budget=budget,
                     total_space=total_space,
+                    salt=job.salt,
                     cancel_event=job.cancel_event,
                     progress_callback=_progress,
                 )
@@ -221,7 +247,7 @@ def create_app(static_folder: str | Path | None = None) -> Flask:
                 job.elapsed_ms = result.elapsed_ms
                 # Record the run in local history.
                 try:
-                    conn = connect()
+                    conn = connect(db_path)
                     record_run(
                         conn,
                         target_hash=job.target_hash,
@@ -235,6 +261,7 @@ def create_app(static_folder: str | Path | None = None) -> Flask:
                         matched_plaintext=(
                             result.matched_plaintext if status == STATUS_MATCH else None
                         ),
+                        salt=job.salt,
                     )
                     conn.close()
                     job.state = status
@@ -330,6 +357,16 @@ def create_app(static_folder: str | Path | None = None) -> Flask:
             return jsonify({"error": error}), 400
         params["algorithm"] = algorithm
 
+        salt = (request.form.get("salt") or "").strip()
+        if is_salted(algorithm) and not salt:
+            return jsonify(
+                {"error": f"Salted format {algorithm} requires a salt value."}
+            ), 400
+        if salt and not is_salted(algorithm):
+            return jsonify(
+                {"error": f"Algorithm {algorithm} does not take a salt."}
+            ), 400
+
         temp_path = None
         budget = None
         total_space = None
@@ -341,7 +378,8 @@ def create_app(static_folder: str | Path | None = None) -> Flask:
                 return jsonify({"error": "Dictionary mode requires a wordlist upload."}), 400
             temp_path, error = _save_upload(upload)
             if error is not None:
-                return jsonify(error), 413 if "100 MiB" in error else 400
+                status = 413 if "100 MiB" in error["error"] else 400
+                return jsonify(error), status
             batch_source = iter_wordlist_batches(temp_path)
         elif mode == "brute-force":
             charset_raw = request.form.get("charset", "")
@@ -366,7 +404,7 @@ def create_app(static_folder: str | Path | None = None) -> Flask:
                 {"error": "Mode must be 'dictionary' or 'brute-force'."}
             ), 400
 
-        job, error = _start_job(params, mode, batch_source, budget, total_space, temp_path)
+        job, error = _start_job(params, mode, batch_source, budget, total_space, temp_path, salt)
         if error is not None:
             _remove_temp_file(temp_path)
             return jsonify(error), 409
@@ -409,7 +447,7 @@ def create_app(static_folder: str | Path | None = None) -> Flask:
     @app.get("/api/history")
     def history():
         try:
-            conn = connect()
+            conn = connect(db_path)
             records = list_runs(conn, limit=100)
             conn.close()
         except HistoryError as exc:
@@ -429,7 +467,7 @@ def create_app(static_folder: str | Path | None = None) -> Flask:
         if csrf_error is not None:
             return csrf_error
         try:
-            conn = connect()
+            conn = connect(db_path)
             deleted = clear_runs(conn)
             conn.close()
         except HistoryError as exc:

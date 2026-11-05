@@ -36,7 +36,7 @@ Both interfaces will call the same Python audit engine. The engine will support:
 | SHA-384   | 96 hexadecimal characters  | Yes        |
 | SHA-512   | 128 hexadecimal characters | Yes        |
 
-Hash length and character structure help identify a format, but do not always prove the algorithm. MD5, NTLM, and MD4 share the same 32-character hexadecimal shape. The tool reports all three and requires an explicit selection. NTLM uses Passlib's `nthash`; LM uses Passlib's `lmhash` and compares only the first 8-byte DES block (16 hex), matching the format hashcat uses — a 16-hex LM target identifies passwords by their first seven characters. MD5, SHA-1, SHA-224, SHA-256, SHA-384, and SHA-512 use Python's `hashlib`; MD4 reuses the pure-Python MD4 implementation from the NTLM fallback (validated against RFC 1320 test vectors). Salted formats (`md5($pass.$salt)`, `sha256($salt.$pass)`, …) and adaptive formats (bcrypt, sha512crypt, phpass) are not supported in v1 — they need a salt input and different engine work.
+Hash length and character structure help identify a format, but do not always prove the algorithm. MD5, NTLM, and MD4 share the same 32-character hexadecimal shape. The tool reports all three and requires an explicit selection. NTLM uses Passlib's `nthash`; LM uses Passlib's `lmhash` and compares only the first 8-byte DES block (16 hex), matching the format hashcat uses — a 16-hex LM target identifies passwords by their first seven characters. MD5, SHA-1, SHA-224, SHA-256, SHA-384, and SHA-512 use Python's `hashlib`; MD4 reuses the pure-Python MD4 implementation from the NTLM fallback (validated against RFC 1320 test vectors). Eight salted fast-hash formats are also supported (`md5($pass.$salt)`, `md5($salt.$pass)`, `sha1($pass.$salt)`, `sha1($salt.$pass)`, `sha256($pass.$salt)`, `sha256($salt.$pass)`, `sha512($pass.$salt)`, `sha512($salt.$pass)`) — pass the known salt with `--salt` (CLI) or the dashboard salt field. Adaptive formats (bcrypt, sha512crypt, phpass) remain out of scope; see the [v2 expansion plan](specs/002-feature-expansion/).
 
 ## Features in Scope
 
@@ -284,6 +284,10 @@ The repository includes the [MIT License](LICENSE.md). Replace `[Copyright Holde
 - [Quickstart and validation scenarios](specs/001-offline-password-audit/quickstart.md)
 - [CLI contract](specs/001-offline-password-audit/contracts/cli.md)
 - [Web contract](specs/001-offline-password-audit/contracts/web.md)
+
+## Next: Feature Expansion Plan (v2)
+
+The next round of work is planned in [specs/002-feature-expansion/](specs/002-feature-expansion/) — salted hash formats, hashlist multi-target audits, rule-based mutations, tooling/UX upgrades (benchmark, pause/resume, dashboard export, ETA, plaintext withholding), a pytest suite with CI, and optional plaintext encryption. See its [spec](specs/002-feature-expansion/spec.md), [plan](specs/002-feature-expansion/plan.md), and [task breakdown](specs/002-feature-expansion/tasks.md) (T034–T076). Nothing from it is implemented yet.
   <!-- ===================== FOOTER ===================== -->
   <div align="center">
     <img 

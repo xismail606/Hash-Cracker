@@ -23,6 +23,14 @@ import {
 
 const ALGORITHM_LABELS = {
   md5: "MD5",
+  md5_pass_salt: "md5($pass.$salt)",
+  md5_salt_pass: "md5($salt.$pass)",
+  sha1_pass_salt: "sha1($pass.$salt)",
+  sha1_salt_pass: "sha1($salt.$pass)",
+  sha256_pass_salt: "sha256($pass.$salt)",
+  sha256_salt_pass: "sha256($salt.$pass)",
+  sha512_pass_salt: "sha512($pass.$salt)",
+  sha512_salt_pass: "sha512($salt.$pass)",
   sha256: "SHA-256",
   ntlm: "NTLM",
   sha1: "SHA-1",
@@ -50,6 +58,14 @@ const STATUS_TONE = {
   invalid_input: "text-danger border-danger/40 bg-danger/10",
   storage_error: "text-danger border-danger/40 bg-danger/10",
 };
+const SALTED_BY_LENGTH = {
+  32: ["md5_pass_salt", "md5_salt_pass"],
+  40: ["sha1_pass_salt", "sha1_salt_pass"],
+  64: ["sha256_pass_salt", "sha256_salt_pass"],
+  128: ["sha512_pass_salt", "sha512_salt_pass"],
+};
+const isSalted = (name) => name.endsWith("_pass_salt") || name.endsWith("_salt_pass");
+
 const CHARSET_PRESETS = [
   { name: "lower", label: "lowercase a-z" },
   { name: "upper", label: "uppercase A-Z" },
@@ -105,6 +121,7 @@ export default function AuditDashboard() {
   const [maxCandidates, setMaxCandidates] = useState(1000000);
   const [workers, setWorkers] = useState(4);
   const [acknowledged, setAcknowledged] = useState(false);
+  const [salt, setSalt] = useState("");
 
   // Job state
   const [jobId, setJobId] = useState(null);
@@ -163,6 +180,7 @@ export default function AuditDashboard() {
         body: JSON.stringify({ hash: value }),
       });
       setIdentification(payload);
+      setSalt("");
       setAlgorithm(
         payload.compatible_algorithms.length === 1 ? payload.compatible_algorithms[0] : ""
       );
@@ -200,6 +218,11 @@ export default function AuditDashboard() {
       form.append("hash", hashInput.trim());
       form.append("algorithm", algorithm);
       form.append("workers", String(workers));
+      if (isSalted(algorithm)) {
+        if (!salt.trim())
+          throw new Error(`Salted format ${ALGORITHM_LABELS[algorithm] || algorithm} requires a salt value.`);
+        form.append("salt", salt.trim());
+      }
       form.append("acknowledge_retention", "true");
       if (mode === "dictionary") {
         if (!wordlistFile)
@@ -263,12 +286,17 @@ export default function AuditDashboard() {
   }
 
   const ambiguous = identification?.ambiguous;
+  const saltedOptions =
+    identification?.valid
+      ? SALTED_BY_LENGTH[identification.normalized.length] || []
+      : [];
   const canAudit =
     identification?.valid &&
     algorithm &&
     acknowledged &&
     !starting &&
     !serverMissing &&
+    (!isSalted(algorithm) || salt.trim() !== "") &&
     (mode === "dictionary" ? wordlistFile !== null : true);
   const running = job && !job.result && !job.error;
   const budgetFraction =
@@ -420,12 +448,55 @@ export default function AuditDashboard() {
                       name="algorithm"
                       className="sr-only"
                       checked={algorithm === name}
-                      onChange={() => setAlgorithm(name)}
+                      onChange={() => {
+                        setAlgorithm(name);
+                        setSalt("");
+                      }}
                     />
                     {ALGORITHM_LABELS[name]}
                   </label>
                 ))}
               </div>
+              {saltedOptions.length > 0 && (
+                <div className="mt-4">
+                  <label className={labelClass} htmlFor="salted-format">
+                    Salted format (advanced — hashcat modes 10/20/110/120/1410/1420/1710/1720)
+                  </label>
+                  <select
+                    id="salted-format"
+                    className="input mono px-3 py-2.5 text-sm"
+                    value={saltedOptions.includes(algorithm) ? algorithm : ""}
+                    onChange={(e) => {
+                      setAlgorithm(e.target.value);
+                      setSalt("");
+                    }}
+                    disabled={running}
+                  >
+                    <option value="">None (unsalted shape formats only)</option>
+                    {saltedOptions.map((name) => (
+                      <option key={name} value={name}>
+                        {ALGORITHM_LABELS[name]}
+                      </option>
+                    ))}
+                  </select>
+                  {algorithm && isSalted(algorithm) && (
+                    <div className="mt-3">
+                      <label className={labelClass} htmlFor="salt-value">
+                        Salt value (required — the known salt stored with this hash)
+                      </label>
+                      <input
+                        id="salt-value"
+                        className="input mono px-3 py-2.5 text-sm"
+                        value={salt}
+                        spellCheck={false}
+                        placeholder="e.g. 343141"
+                        onChange={(e) => setSalt(e.target.value)}
+                        disabled={running}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

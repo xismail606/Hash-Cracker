@@ -35,6 +35,11 @@ CREATE TABLE IF NOT EXISTS audit_runs (
 CREATE INDEX IF NOT EXISTS idx_audit_runs_started ON audit_runs (started_at);
 """
 
+# Columns added after v1; applied additively on connect for existing databases.
+MIGRATION_COLUMNS = (
+    ("salt", "TEXT"),
+)
+
 EXPORT_COLUMNS = (
     "run_id",
     "started_at",
@@ -47,6 +52,7 @@ EXPORT_COLUMNS = (
     "elapsed_ms",
     "worker_count",
     "matched_plaintext",
+    "salt",
 )
 
 
@@ -69,6 +75,7 @@ class AuditRecord:
     elapsed_ms: int
     worker_count: int
     matched_plaintext: str | None
+    salt: str | None = None
 
     def as_dict(self) -> dict:
         return {
@@ -83,6 +90,7 @@ class AuditRecord:
             "elapsed_ms": self.elapsed_ms,
             "worker_count": self.worker_count,
             "matched_plaintext": self.matched_plaintext,
+            "salt": self.salt,
         }
 
 
@@ -98,6 +106,11 @@ def connect(db_path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
         path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(path))
         conn.executescript(SCHEMA)
+        # Apply additive post-v1 columns to databases created before them.
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(audit_runs)")}
+        for column, column_type in MIGRATION_COLUMNS:
+            if column not in existing:
+                conn.execute(f"ALTER TABLE audit_runs ADD COLUMN {column} {column_type}")
         conn.commit()
         return conn
     except sqlite3.Error as exc:
@@ -119,11 +132,13 @@ def record_run(
     started_at: str,
     completed_at: str | None = None,
     matched_plaintext: str | None = None,
+    salt: str | None = None,
 ) -> int:
     """Persist one audit run; return the new run ID.
 
     A successful match stores the plaintext/hash pair; non-matching runs
-    store run metadata without a plaintext value.
+    store run metadata without a plaintext value. Salted formats store the
+    salt so reports can reproduce the audit.
     """
     if completed_at is None:
         completed_at = utc_now()
@@ -132,8 +147,8 @@ def record_run(
             """
             INSERT INTO audit_runs (
                 started_at, completed_at, target_hash, algorithm, mode,
-                status, attempts, elapsed_ms, worker_count, matched_plaintext
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                status, attempts, elapsed_ms, worker_count, matched_plaintext, salt
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 started_at,
@@ -146,6 +161,7 @@ def record_run(
                 elapsed_ms,
                 worker_count,
                 matched_plaintext,
+                salt,
             ),
         )
         conn.commit()
@@ -158,7 +174,7 @@ def list_runs(conn: sqlite3.Connection, limit: int | None = None) -> list[AuditR
     """Return local audit records, newest first."""
     query = (
         "SELECT run_id, started_at, completed_at, target_hash, algorithm, mode, "
-        "status, attempts, elapsed_ms, worker_count, matched_plaintext "
+        "status, attempts, elapsed_ms, worker_count, matched_plaintext, salt "
         "FROM audit_runs ORDER BY run_id DESC"
     )
     params: tuple = ()

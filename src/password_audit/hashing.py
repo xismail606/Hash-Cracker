@@ -15,6 +15,8 @@ from __future__ import annotations
 import hashlib
 import struct
 
+from .algorithms import SALTED_ALGORITHMS
+
 _ALGORITHM_MAP = {
     "md5": "md5",
     "sha1": "sha1",
@@ -25,19 +27,37 @@ _ALGORITHM_MAP = {
 }
 
 
-def hash_candidate(candidate: str, algorithm: str) -> str:
+def hash_candidate(candidate: str, algorithm: str, salt: str | None = None) -> str:
     """Return the lowercase hexadecimal digest for one candidate string.
 
     The candidate is hashed exactly as written (no trimming) so dictionary
-    entries keep the value stored in the wordlist.
+    entries keep the value stored in the wordlist. Salted formats combine
+    ``candidate`` and ``salt`` per the registry's salt position; the salt is
+    required for them and must not be supplied for unsalted formats.
     """
     if algorithm in _ALGORITHM_MAP:
+        if salt is not None:
+            raise ValueError(f"Algorithm {algorithm!r} does not take a salt.")
         return hashlib.new(_ALGORITHM_MAP[algorithm], candidate.encode("utf-8")).hexdigest()
+    if algorithm in SALTED_ALGORITHMS:
+        if not salt:
+            raise ValueError(f"Algorithm {algorithm!r} requires a salt.")
+        base, position = SALTED_ALGORITHMS[algorithm]
+        material = (
+            f"{candidate}{salt}" if position == "pass_salt" else f"{salt}{candidate}"
+        ).encode("utf-8")
+        return hashlib.new(_ALGORITHM_MAP[base], material).hexdigest()
     if algorithm == "ntlm":
+        if salt is not None:
+            raise ValueError(f"Algorithm {algorithm!r} does not take a salt.")
         return ntlm_hash(candidate)
     if algorithm == "md4":
+        if salt is not None:
+            raise ValueError(f"Algorithm {algorithm!r} does not take a salt.")
         return _md4_hex(candidate.encode("utf-8"))
     if algorithm == "lm":
+        if salt is not None:
+            raise ValueError(f"Algorithm {algorithm!r} does not take a salt.")
         return lm_hash(candidate)
     raise ValueError(f"Unsupported algorithm: {algorithm!r}")
 

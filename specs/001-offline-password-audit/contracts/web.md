@@ -16,6 +16,7 @@ The dashboard uses Astro, React, JavaScript, and Tailwind CSS. Flask serves the 
 - Accepts one target hash and displays supported algorithm candidates.
 - Requires an explicit MD5, NTLM, or MD4 choice for 32-character hexadecimal hashes.
 - Offers dictionary and brute-force modes.
+- Offers the salted fast-hash formats (`md5($pass.$salt)` … `sha512($salt.$pass)`) in an advanced format select with a required salt field; the backend rejects salted starts without a salt and unsalted formats with one.
 - Dictionary mode accepts one UTF-8 wordlist upload up to 100 MiB.
 - Brute-force mode requires a selected charset, minimum length, maximum length, and candidate budget; the budget defaults to 1,000,000 and cannot exceed 10,000,000.
 - Offers worker counts from 1 through 8, defaulting to 4.

@@ -16,9 +16,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-frontend = [
-    # Node/npm are used to build the Astro dashboard; this marker documents
-    # that the frontend toolchain is a build-time dependency only.
+dev = [
+    "pytest>=8.0",
 ]
 
 [project.scripts]

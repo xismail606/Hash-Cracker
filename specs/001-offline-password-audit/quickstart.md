@@ -65,6 +65,16 @@ Input rules (implemented in `candidates.py`):
 
 Verified behavior: the tool reports match/no-match, attempts, effective worker count, and elapsed time. A successful match prints the plaintext/hash result and records it in local SQLite after the retention warning is acknowledged (`--yes` skips the interactive prompt). Verified synthetic runs: SHA-256 match (attempts = the matching entry's position), MD5 no-match (attempts = all entries), NTLM match via Passlib `nthash`.
 
+## Salted Formats
+
+Salted fast hashes take the known salt as a run parameter:
+
+```text
+python -m password_audit audit 3d83c8e717ff0e7ecfe187f088d69954 --algorithm md5_pass_salt --salt 343141 --mode dictionary --wordlist PATH
+```
+
+Verified behavior: hashcat salted examples (modes 10 and 1410, plaintext `hashcat`) audit to MATCH with the example salt; a wrong salt gives an honest no_match; omitting `--salt` for a salted format fails before processing; the salt is stored in the history record.
+
 ## Brute-Force Mode
 
 Use a short synthetic test secret and a small charset/length range that includes it.
