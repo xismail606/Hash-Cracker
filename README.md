@@ -75,8 +75,9 @@ Hash length and character structure help identify a format, but do not always pr
 | Technology           | Role                                                                                                      |
 | -------------------- | --------------------------------------------------------------------------------------------------------- |
 | **Python 3.11+**     | Hash analysis, audit engine, candidate processing, multiprocessing, CLI, Flask backend, and SQLite access |
-| **`hashlib`**        | MD5 and SHA-256 candidate hashing                                                                         |
-| **Passlib `nthash`** | NTLM candidate hashing                                                                                    |
+| **`hashlib`**        | MD5, SHA-1/224/256/384/512, SHA-512/224, and SHA-512/256 candidate hashing                               |
+| **Passlib**          | NTLM and LM candidate hashing; bcrypt, sha512crypt, and phpass verification                              |
+| **Pure-Python MD4 / RIPEMD-160** | Dependency-free fallback implementations validated against official test vectors             |
 | **Flask**            | Local web server and JSON API                                                                             |
 | **Astro**            | Build the dashboard as static assets                                                                      |
 | **React**            | Interactive hash, audit, progress, and result components                                                  |
@@ -258,9 +259,14 @@ See the [CLI contract](specs/001-offline-password-audit/contracts/cli.md) and
 [web contract](specs/001-offline-password-audit/contracts/web.md) for the full
 contracts.
 
-## Implementation Plan: Four Required Phases
+## Implementation Plan: Ten Phases
 
-The work is organized into the four phases in the supplied student project guide. The [task plan](specs/001-offline-password-audit/tasks.md) contains **33 detailed tasks**, each mapped to files and dependencies.
+The work is organized into ten phases: the four required v1 phases from the
+supplied student project guide (Phases 1–4), followed by six v2 expansion
+phases (Phases 5–10). Every task across both plans is implemented and checked
+off. The [v1 task plan](specs/001-offline-password-audit/tasks.md) contains
+**33 tasks (T001–T033)** and the [v2 task plan](specs/002-feature-expansion/tasks.md)
+contains **43 tasks (T034–T076)**, each mapped to files and dependencies.
 
 ### Phase 1: Hash Identification & Structure Analysis Module — T001–T007
 
@@ -315,43 +321,137 @@ The work is organized into the four phases in the supplied student project guide
 | T032 | Document records, database location, exports, and retention warning.                        |
 | T033 | Walk through the phase validation scenarios with synthetic data and refine the quickstart.  |
 
+### Phase 5: Salted Fast Hashes — T034–T042 (v2)
+
+| Task | Work                                                                                                  |
+| ---- | ----------------------------------------------------------------------------------------------------- |
+| T034 | Add the `SALTED_ALGORITHMS` registry (name → base digest, salt position) and salted-format validation. |
+| T035 | Add position-aware salted digest adapters.                                                            |
+| T036 | Pass the run salt through `run_audit` and the comparison worker.                                       |
+| T037 | Add `--salt` to the audit command and wire it through CLI validation.                                  |
+| T038 | Add the salt field to `POST /api/audits` and dashboard validation.                                     |
+| T039 | Add the salt input to the dashboard form (shown for salted formats).                                   |
+| T040 | Store the salt in `audit_runs` with an additive schema migration.                                      |
+| T041 | Update the CLI and web contracts for salted formats.                                                   |
+| T042 | Validate salted formats against hashcat example hashes and update the quickstart.                      |
+
+### Phase 6: Hashlist Multi-Target Audits — T043–T051 (v2)
+
+| Task | Work                                                                                                        |
+| ---- | ----------------------------------------------------------------------------------------------------------- |
+| T043 | Add hashlist parsing (`algorithm:hash` optional prefix, skip blanks and `#` comments, whole-file validation). |
+| T044 | Implement the multi-target worker (targets dict keyed by digest, single hashing pass, per-target matches).    |
+| T045 | Add `--hashlist PATH` to the audit command (mutually exclusive with a positional hash).                       |
+| T046 | Add hashlist upload and per-target result tracking to the web API.                                            |
+| T047 | Render the per-target results table (hash, algorithm, status, plaintext) in the dashboard.                    |
+| T048 | Add the `audit_batches` table and per-target result rows with an additive migration.                          |
+| T049 | Include batch results in CSV/JSON export.                                                                     |
+| T050 | Update the CLI and web contracts for hashlist mode.                                                           |
+| T051 | Validate the three-target synthetic scenario and update the quickstart.                                       |
+
+### Phase 7: Rules & Mutations — T052–T057 (v2)
+
+| Task | Work                                                                                  |
+| ---- | ------------------------------------------------------------------------------------- |
+| T052 | Create `rules.py` with the preset registry (capitalize, upper, lower, leetspeak, digit/year appends). |
+| T053 | Wrap dictionary batch sources with rule expansion (budget counts expanded candidates).                |
+| T054 | Add `--rules PRESET` to the audit command (dictionary mode).                                          |
+| T055 | Add the rules preset select to the dashboard (dictionary mode).                                       |
+| T056 | Document rule presets and budget semantics in the contracts.                                          |
+| T057 | Validate the mutated-match scenario and update the quickstart.                                        |
+
+### Phase 8: Tooling & UX — T058–T066 (v2)
+
+| Task | Work                                                                                                  |
+| ---- | ------------------------------------------------------------------------------------------------------ |
+| T058 | Create `benchmark.py` (wall-clock slice per algorithm) and the `benchmark` CLI command.                 |
+| T059 | Implement pause/resume (offset checkpoint, wordlist byte-position validation, pool release).            |
+| T060 | Add the pause and resume API routes.                                                                    |
+| T061 | Add the pause/resume button state machine in the dashboard.                                             |
+| T062 | Add `GET /api/export?format=csv\|json` and dashboard download buttons.                                  |
+| T063 | Compute and display ETA (attempts/second × remaining) in CLI progress and the dashboard.                |
+| T064 | Add the `--no-store-plaintext` CLI flag and dashboard checkbox (withheld marker in history).            |
+| T065 | Make Auto-fit LM-aware (upper-only alphabet suggestion when the identified algorithm is LM).            |
+| T066 | Update the CLI and web contracts for all phase-8 features.                                              |
+
+### Phase 9: Security & Quality — T067–T073 (v2)
+
+| Task | Work                                                                                                          |
+| ---- | -------------------------------------------------------------------------------------------------------------- |
+| T067 | Write `tests/test_algorithms.py` (shape mapping, ambiguity, normalization) and `tests/test_hashing.py` (RFC 1320 vectors + hashcat examples). |
+| T068 | Write `tests/test_bruteforce.py` (charset resolution, budget boundaries) and `tests/test_candidates.py` (chunking, hashlist parsing).        |
+| T069 | Write `tests/test_engine.py` — golden tests for attempt accounting.                                                            |
+| T070 | Write `tests/test_web.py` (Flask test client: session/CSRF, identify, audit, uploads, history, pause/resume, export).          |
+| T071 | Add the GitHub Actions CI workflow running pytest on Windows and Ubuntu, and the `pytest` dev dependency.                       |
+| T072 | Add optional at-rest encryption of stored plaintexts (Fernet, passphrase-derived key, unlock in CLI and dashboard).             |
+| T073 | Update the README and quickstart for the test suite, CI badge, and encryption mode.                                             |
+
+### Phase 10: Research — T074–T076 (v2, quarantined)
+
+Research tasks landed only after hashcat-example validation and phase-9 test
+coverage; rejected candidates are documented in the [v2 plan](specs/002-feature-expansion/plan.md).
+
+| Task | Work                                                                                                     |
+| ---- | ---------------------------------------------------------------------------------------------------------- |
+| T074 | Research RIPEMD-160 (pure-Python implementation, 40-hex, adds ambiguity with SHA-1) — merged with validation. |
+| T075 | Research adaptive formats (bcrypt, sha512crypt, phpass via Passlib) with slow-format budget semantics — merged. |
+| T076 | Research SHA-512/224 and SHA-512/256 (`hashlib.new` availability check) — merged.                              |
+
 ## Repository Layout (implemented)
 
 
 
 ```text
 README.md
+CHANGELOG.md
 LICENSE.md
 pyproject.toml
+setup.ps1 / setup.sh          # one-command setup (Windows / Linux-macOS)
+serve.ps1 / serve.sh          # dashboard launch shortcuts
+.github/workflows/ci.yml      # pytest on Windows + Ubuntu
 src/password_audit/
 ├── __init__.py
 ├── __main__.py
-├── algorithms.py
-├── hashing.py
-├── candidates.py
-├── bruteforce.py
-├── engine.py
-├── history.py
-├── cli.py
-├── web.py
-└── static/                     # Astro output served by Flask
+├── algorithms.py             # format registry, shapes, salted/adaptive tables
+├── hashing.py                # digest adapters (hashlib, Passlib, salted, MD4, RIPEMD-160)
+├── ripemd160.py              # pure-Python RIPEMD-160 implementation
+├── candidates.py             # wordlist streaming, chunks, hashlist parsing
+├── bruteforce.py             # charset/length candidate generator
+├── rules.py                  # mutation rule presets
+├── benchmark.py              # per-algorithm throughput measurement
+├── engine.py                 # multiprocessing audit engine, pause/resume
+├── history.py                # SQLite history, exports, encryption
+├── cli.py                    # argparse CLI (identify, audit, history, export, benchmark, serve)
+├── web.py                    # loopback Flask JSON API + static serving
+└── static/                   # Astro output served by Flask (gitignored, built by npm run build)
 frontend/
 ├── package.json
 ├── astro.config.mjs
 └── src/
     ├── pages/index.astro
-    ├── components/AuditDashboard.jsx
+    ├── components/
+    │   ├── AuditDashboard.jsx
+    │   ├── Navbar.jsx
+    │   ├── Footer.jsx
+    │   ├── ParticleBackground.jsx
+    │   └── ChangelogModal.jsx
     └── styles/global.css
-specs/001-offline-password-audit/
-├── spec.md
-├── plan.md
-├── research.md
-├── data-model.md
-├── quickstart.md
-├── tasks.md
-└── contracts/
-    ├── cli.md
-    └── web.md
+tests/                        # 131-test pytest suite
+specs/
+├── 001-offline-password-audit/
+│   ├── spec.md
+│   ├── plan.md
+│   ├── research.md
+│   ├── data-model.md
+│   ├── quickstart.md
+│   ├── tasks.md
+│   └── contracts/
+│       ├── cli.md
+│       └── web.md
+└── 002-feature-expansion/
+    ├── spec.md
+    ├── plan.md
+    └── tasks.md
 ```
 
 This layout is implemented; `static/` holds the Astro build output (gitignored) and is created by `npm run build`.
@@ -431,12 +531,18 @@ v2.0.0 feature expansion).
 - [Implementation plan](specs/001-offline-password-audit/plan.md)
 - [Technical decisions](specs/001-offline-password-audit/research.md)
 - [Data model](specs/001-offline-password-audit/data-model.md)
-- [Four-phase task plan](specs/001-offline-password-audit/tasks.md)
+- [v1 task plan (Phases 1–4)](specs/001-offline-password-audit/tasks.md)
 - [Quickstart and validation scenarios](specs/001-offline-password-audit/quickstart.md)
 - [CLI contract](specs/001-offline-password-audit/contracts/cli.md)
 - [Web contract](specs/001-offline-password-audit/contracts/web.md)
 
-## Feature Expansion Plan (v2) — Implemented
+v2 expansion documents:
+
+- [Specification](specs/002-feature-expansion/spec.md)
+- [Implementation plan](specs/002-feature-expansion/plan.md)
+- [Task breakdown (Phases 5–10)](specs/002-feature-expansion/tasks.md)
+
+## Feature Expansion (v2) — Phases 5–10, Implemented
 
 The v2 round planned in [specs/002-feature-expansion/](specs/002-feature-expansion/) is complete: salted fast-hash formats, hashlist multi-target audits, rule-based mutations, tooling/UX upgrades (benchmark, pause/resume, dashboard export, ETA, plaintext withholding), a pytest suite with CI, optional plaintext encryption at rest, and the researched formats (RIPEMD-160, adaptive bcrypt/sha512crypt/phpass, SHA-512/224 and SHA-512/256). See its [spec](specs/002-feature-expansion/spec.md), [plan](specs/002-feature-expansion/plan.md), and [task breakdown](specs/002-feature-expansion/tasks.md) (T034–T076).
   <!-- ===================== FOOTER ===================== -->
