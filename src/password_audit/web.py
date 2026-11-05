@@ -155,13 +155,17 @@ def create_app(
                     "then restart the server."
                 }
             ), 503
-        return send_from_directory(str(static_folder), "index.html")
+        response = send_from_directory(str(static_folder), "index.html")
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        return response
 
     @app.get("/<path:asset>")
     def assets(asset: str):
         target = Path(static_folder) / asset
         if target.is_file():
-            return send_from_directory(str(static_folder), asset)
+            response = send_from_directory(str(static_folder), asset)
+            response.headers["Cache-Control"] = "no-cache"
+            return response
         return jsonify({"error": "Not found."}), 404
 
     # --- session / CSRF --------------------------------------------------

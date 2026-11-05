@@ -20,6 +20,8 @@ The dashboard uses Astro, React, JavaScript, and Tailwind CSS. Flask serves the 
 - Dictionary mode accepts one UTF-8 wordlist upload up to 100 MiB.
 - An optional hashlist upload (same format as the CLI hashlist) audits many targets in one pass; it replaces the single hash field and its per-target results are shown in a results table with the batch ID.
 - Dictionary mode offers mutation-rule presets that expand candidates inside the candidate budget.
+- A run-level checkbox withholds the recovered plaintext from local history (the match is still recorded with a withheld marker).
+- The Auto-fit button identifies the hash and pre-fills brute-force settings that fit the budget; for an identified LM target it suggests an upper-only alphabet (LM compares uppercase only) and for ambiguous shapes it deliberately leaves the algorithm unselected.
 - Brute-force mode requires a selected charset, minimum length, maximum length, and candidate budget; the budget defaults to 1,000,000 and cannot exceed 10,000,000.
 - Offers worker counts from 1 through 8, defaulting to 4.
 - Requires acknowledgement of the local plaintext/hash retention warning before an audit begins.
@@ -39,7 +41,9 @@ The dashboard uses Astro, React, JavaScript, and Tailwind CSS. Flask serves the 
 
 ## Progress, Results, and Storage
 
-- Displays current mode, algorithm, effective workers, attempts, progress, elapsed time, and terminal state.
+- Displays current mode, algorithm, effective workers, attempts, progress, elapsed time, and terminal state. Bounded runs show an ETA (attempts/second × remaining) and budget-fraction progress bar while running.
+- Pause/resume buttons follow the job state machine (running → pausing → paused → resuming → running); pause requests for hashlist and rule-expanded runs are refused by the API with an explicit error, which the dashboard surfaces.
+- The history card offers CSV/JSON download buttons (`GET /api/export`) and shows encrypted rows as `<encrypted>` with a passphrase unlock form until `POST /api/history/unlock` succeeds.
 - Shows the recovered plaintext and target hash for successful runs after the required acknowledgement.
 - Persists successful plaintext/hash pairs and run metadata in local SQLite (same default database as the CLI, `~/.password_audit/history.db`).
 - Removes temporary wordlist uploads after completion, cancellation, validation failure, and application shutdown (graceful shutdown; a force-killed process cannot run its cleanup hook).

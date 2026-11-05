@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { GitBranch, Sun, Moon, Terminal } from "lucide-react";
+import { GitBranch, Sun, Moon, Terminal, History } from "lucide-react";
+import ChangelogModal from "./ChangelogModal";
 
 // Fixed floating capsule navbar, adapted from the CyberSec Arsenal Navbar:
 // logo pill on the left, action pill on the right, hides on scroll down.
@@ -10,6 +11,7 @@ export default function Navbar() {
       : "dark"
   );
   const [navVisible, setNavVisible] = useState(true);
+  const [changelogOpen, setChangelogOpen] = useState(false);
   const prevScrollPos = useRef(0);
 
   useEffect(() => {
@@ -58,6 +60,15 @@ export default function Navbar() {
 
         {/* Action controls inside capsule pill */}
         <nav className="nav-pill" aria-label="Dashboard controls">
+          <button
+            onClick={() => setChangelogOpen(true)}
+            title="View changelog"
+            className="pill-link"
+            type="button"
+            aria-label="View changelog"
+          >
+            <History size={18} />
+          </button>
           <a
             href="https://github.com/xismail606/Hash-Cracker"
             target="_blank"
@@ -85,6 +96,8 @@ export default function Navbar() {
           </button>
         </nav>
       </div>
+
+      <ChangelogModal isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
     </header>
   );
 }

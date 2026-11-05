@@ -26,6 +26,7 @@
 :root {
   --bg: #030303;
   --bg-gradient: radial-gradient(circle at 50% 0%, #071e13 0%, #030303 75%);
+  --bg-grid-color: rgba(16, 185, 129, 0.015);
   --surface: #0a0c0b;
   --surface-raised: #121413;
   --border: rgba(16, 185, 129, 0.08);
@@ -45,6 +46,7 @@
 html[data-theme="light"] {
   --bg: #f5f1ea;
   --bg-gradient: linear-gradient(180deg, #faf7f2 0%, #ede7dc 100%);
+  --bg-grid-color: rgba(16, 185, 129, 0.03);
   --surface: #ffffff;
   --surface-raised: #eae4d8;
   --border: rgba(120, 100, 80, 0.12);
@@ -77,6 +79,38 @@ html[data-theme="light"] {
 
 html {
   background: var(--bg);
+}
+
+/* Fixed background grid (same as the CyberSec site). */
+.bg-grid {
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, var(--bg-grid-color) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--bg-grid-color) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: -20;
+}
+
+/* Particle canvas wrapper (same as the CyberSec site). */
+.site-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -10;
+  overflow: hidden;
+  pointer-events: none;
+}
+.site-particles {
+  position: absolute;
+  inset: 0;
+  opacity: 0.85;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* The JS renders a static particle field in this mode; keep it visible. */
+  .site-particles {
+    opacity: 0.5;
+  }
 }
 
 body {

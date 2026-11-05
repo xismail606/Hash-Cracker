@@ -11,6 +11,7 @@ import {
   Trash2,
   AlertTriangle,
   Sparkles,
+  KeyRound,
 } from "lucide-react";
 
 // Local dashboard for the offline hash-audit engine. Talks only to the
@@ -159,6 +160,9 @@ export default function AuditDashboard() {
   const [historyNote, setHistoryNote] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [encryptedCount, setEncryptedCount] = useState(0);
+  const [unlockPassphrase, setUnlockPassphrase] = useState("");
+  const [unlocking, setUnlocking] = useState(false);
 
   // Brute-force auto-fit suggestion
   const [suggestion, setSuggestion] = useState(null);
@@ -184,11 +188,33 @@ export default function AuditDashboard() {
       .then((payload) => {
         setHistory(payload.records);
         setHistoryNote(payload.sensitive_note || "");
+        setEncryptedCount(payload.encrypted_count || 0);
       })
       .catch((err) => {
         if (history === null) setHistory([]);
         setError(err.message);
       });
+  }
+
+  async function unlockHistory() {
+    if (!unlockPassphrase) {
+      setError("Enter the history encryption passphrase to unlock.");
+      return;
+    }
+    setUnlocking(true);
+    try {
+      await apiFetch("/api/history/unlock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+        body: JSON.stringify({ passphrase: unlockPassphrase }),
+      });
+      setUnlockPassphrase("");
+      refreshHistory();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUnlocking(false);
+    }
   }
 
   async function identifyHash(value = hashInput) {
@@ -391,8 +417,14 @@ export default function AuditDashboard() {
       // For an ambiguous shape (MD5/NTLM) the algorithm stays unselected on
       // purpose: the tool never guesses through the overlap.
 
-      const names = ["lower", "digits"];
-      const alphabetSize = 36; // |lower + digits|
+      // LM stores uppercase comparisons (hashcat's upper-case convention), so
+      // an identified LM target auto-fits an upper-only alphabet instead.
+      const isLm =
+        payload.compatible_algorithms.length === 1 &&
+        payload.compatible_algorithms[0] === "lm";
+      const names = isLm ? ["upper"] : ["lower", "digits"];
+      const alphabetSize = isLm ? 26 : 36; // |upper| vs |lower + digits|
+      const alphabetLabel = isLm ? "upper" : "lower+digits";
       const budget = maxCandidates;
       let fitLength = 0;
       let covered = 0;
@@ -421,7 +453,9 @@ export default function AuditDashboard() {
           payload.ambiguous
             ? " — ambiguous shape, pick the algorithm below before starting"
             : " — selected"
-        }; set charset lower+digits (${alphabetSize} characters) and lengths 1–${fitLength}, covering a full space of ${covered.toLocaleString()} candidates within the ${budget.toLocaleString()} budget.`,
+        }; set charset ${alphabetLabel} (${alphabetSize} characters)${
+          isLm ? " — LM compares uppercase only" : ""
+        } and lengths 1–${fitLength}, covering a full space of ${covered.toLocaleString()} candidates within the ${budget.toLocaleString()} budget.`,
       });
     } catch (err) {
       setError(err.message);
@@ -1072,6 +1106,44 @@ export default function AuditDashboard() {
         />
         <div className="px-5 py-4">
           {historyNote && <p className="mb-3 text-xs text-text-muted">{historyNote}</p>}
+          {encryptedCount > 0 && (
+            <div className="mb-4 rounded-xl border border-accent/30 bg-accent/5 px-4 py-3">
+              <p className="text-sm font-semibold text-text">
+                {encryptedCount} encrypted plaintext{encryptedCount > 1 ? "s" : ""} in history
+              </p>
+              <p className="mt-1 text-xs text-text-muted">
+                Enter the passphrase used when the run was encrypted (CLI{" "}
+                <code className="mono rounded border border-border bg-surface px-1">--encrypt</code>)
+                to display the stored values. Losing the passphrase makes them unrecoverable.
+              </p>
+              <div className="mt-2.5 flex flex-col gap-2 sm:flex-row">
+                <div className="relative flex-1">
+                  <KeyRound
+                    size={14}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-accent"
+                  />
+                  <input
+                    type="password"
+                    className="input mono py-2 pl-9 pr-3 text-sm"
+                    value={unlockPassphrase}
+                    placeholder="History encryption passphrase"
+                    autoComplete="off"
+                    onChange={(e) => setUnlockPassphrase(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !unlocking) unlockHistory();
+                    }}
+                  />
+                </div>
+                <button
+                  className="btn-secondary px-4 py-2 text-sm"
+                  onClick={unlockHistory}
+                  disabled={unlocking || !unlockPassphrase}
+                >
+                  {unlocking ? "Unlocking…" : "Unlock"}
+                </button>
+              </div>
+            </div>
+          )}
           {history === null ? (
             <p className="text-sm text-text-muted">Loading…</p>
           ) : history.length === 0 ? (
@@ -1126,6 +1198,8 @@ export default function AuditDashboard() {
                       <td className="py-2">
                         {record.matched_plaintext === null ? (
                           "—"
+                        ) : record.matched_plaintext === "<encrypted>" ? (
+                          <span className="text-text-muted">{record.matched_plaintext}</span>
                         ) : (
                           <span className="text-success">{record.matched_plaintext}</span>
                         )}
