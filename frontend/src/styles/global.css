@@ -114,6 +114,7 @@ html {
 }
 
 body {
+  isolation: isolate;
   font-family: var(--font-sans);
   background: var(--bg-gradient);
   background-attachment: fixed;
