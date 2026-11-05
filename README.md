@@ -1,3 +1,12 @@
+<!-- ===================== HEADER ===================== -->
+<div align="center">
+  <img 
+    src="https://capsule-render.vercel.app/api?type=waving&color=gradient&text=Hash%20Cracker&height=140&section=header"
+    alt="Hash Cracker Header"
+    width="100%"
+  />
+</div>
+
 # Hash Cracker
 
 A planned Python-based offline hash-cracking and password-auditing project. It identifies supported hash formats, compares a target against either a supplied dictionary or a bounded brute-force search, provides both a CLI and local web dashboard, and stores audit results in SQLite.
@@ -15,11 +24,11 @@ Both interfaces will call the same Python audit engine. The engine will support:
 
 ## Supported Hashes
 
-| Algorithm | Format | v1 support |
-|---|---|---|
-| MD5 | 32 hexadecimal characters | Yes |
-| NTLM | 32 hexadecimal characters | Yes |
-| SHA-256 | 64 hexadecimal characters | Yes |
+| Algorithm | Format                    | v1 support |
+| --------- | ------------------------- | ---------- |
+| MD5       | 32 hexadecimal characters | Yes        |
+| NTLM      | 32 hexadecimal characters | Yes        |
+| SHA-256   | 64 hexadecimal characters | Yes        |
 
 Hash length and character structure help identify a format, but do not always prove the algorithm. MD5 and NTLM have the same 32-character hexadecimal shape. The tool must report both and require an explicit selection. NTLM candidate calculation uses Passlib's `nthash`; MD5 and SHA-256 use Python's `hashlib`.
 
@@ -46,18 +55,18 @@ Hash length and character structure help identify a format, but do not always pr
 
 ## Technology Stack
 
-| Technology | Planned role |
-|---|---|
-| **Python 3.11+** | Hash analysis, audit engine, candidate processing, multiprocessing, CLI, Flask backend, and SQLite access |
-| **`hashlib`** | MD5 and SHA-256 candidate hashing |
-| **Passlib `nthash`** | NTLM candidate hashing |
-| **Flask** | Local web server and JSON API |
-| **Astro** | Build the dashboard as static assets |
-| **React** | Interactive hash, audit, progress, and result components |
-| **JavaScript** | Browser-side API requests and progress updates |
-| **Tailwind CSS** | Dashboard styling |
-| **SQLite** | Local audit history and result reporting |
-| **Node.js/npm** | Frontend dependency installation and build |
+| Technology           | Planned role                                                                                              |
+| -------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Python 3.11+**     | Hash analysis, audit engine, candidate processing, multiprocessing, CLI, Flask backend, and SQLite access |
+| **`hashlib`**        | MD5 and SHA-256 candidate hashing                                                                         |
+| **Passlib `nthash`** | NTLM candidate hashing                                                                                    |
+| **Flask**            | Local web server and JSON API                                                                             |
+| **Astro**            | Build the dashboard as static assets                                                                      |
+| **React**            | Interactive hash, audit, progress, and result components                                                  |
+| **JavaScript**       | Browser-side API requests and progress updates                                                            |
+| **Tailwind CSS**     | Dashboard styling                                                                                         |
+| **SQLite**           | Local audit history and result reporting                                                                  |
+| **Node.js/npm**      | Frontend dependency installation and build                                                                |
 
 ### Go and Python
 
@@ -119,56 +128,56 @@ The work is organized into the four phases in the supplied student project guide
 
 ### Phase 1: Hash Identification & Structure Analysis Module — T001–T007
 
-| Task | Work |
-|---|---|
-| T001 | Configure Python project metadata and Flask/Passlib dependencies. |
-| T002 | Define supported formats, digest lengths, normalization, and candidate algorithms. |
-| T003 | Implement MD5/SHA-256 with `hashlib` and NTLM with Passlib. |
-| T004 | Require explicit selection when one input shape matches multiple supported formats. |
-| T005 | Add the CLI `identify` command and input errors. |
-| T006 | Add the Flask JSON identification endpoint. |
+| Task | Work                                                                                  |
+| ---- | ------------------------------------------------------------------------------------- |
+| T001 | Configure Python project metadata and Flask/Passlib dependencies.                     |
+| T002 | Define supported formats, digest lengths, normalization, and candidate algorithms.    |
+| T003 | Implement MD5/SHA-256 with `hashlib` and NTLM with Passlib.                           |
+| T004 | Require explicit selection when one input shape matches multiple supported formats.   |
+| T005 | Add the CLI `identify` command and input errors.                                      |
+| T006 | Add the Flask JSON identification endpoint.                                           |
 | T007 | Document supported hash shapes and the MD5/NTLM ambiguity in the interface contracts. |
 
 ### Phase 2: Multi-Threaded Dictionary & Brute-Force Cracking Engine — T008–T015
 
-| Task | Work |
-|---|---|
-| T008 | Stream wordlists and read them in bounded chunks. |
+| Task | Work                                                                            |
+| ---- | ------------------------------------------------------------------------------- |
+| T008 | Stream wordlists and read them in bounded chunks.                               |
 | T009 | Generate brute-force candidates from explicit character sets and length limits. |
-| T010 | Implement a shared comparison worker for MD5, SHA-256, and NTLM. |
-| T011 | Add bounded multiprocessing, 1–8 workers, cancellation, and chunk scheduling. |
-| T012 | Enforce a 1,000,000 default candidate budget and 10,000,000 hard maximum. |
-| T013 | Track attempts, elapsed time, worker count, progress, state, and match. |
-| T014 | Add CLI arguments for modes and their inputs. |
-| T015 | Document input rules and synthetic validation cases. |
+| T010 | Implement a shared comparison worker for MD5, SHA-256, and NTLM.                |
+| T011 | Add bounded multiprocessing, 1–8 workers, cancellation, and chunk scheduling.   |
+| T012 | Enforce a 1,000,000 default candidate budget and 10,000,000 hard maximum.       |
+| T013 | Track attempts, elapsed time, worker count, progress, state, and match.         |
+| T014 | Add CLI arguments for modes and their inputs.                                   |
+| T015 | Document input rules and synthetic validation cases.                            |
 
 ### Phase 3: CLI / Web Dashboard Interface — T016–T025
 
-| Task | Work |
-|---|---|
-| T016 | Connect CLI audits to the shared engine and print progress and results. |
-| T017 | Warn and require acknowledgement before storing successful plaintext/hash pairs. |
-| T018 | Implement loopback-only Flask serving and CSRF protection. |
-| T019 | Add web job start, status, and cancellation routes. |
-| T020 | Validate 100 MiB uploads and clean up temporary files. |
-| T021 | Set up Astro, React, Tailwind, and frontend build scripts. |
-| T022 | Build dashboard controls for hash identification, algorithm ambiguity, mode, charset, limits, and workers. |
+| Task | Work                                                                                                                       |
+| ---- | -------------------------------------------------------------------------------------------------------------------------- |
+| T016 | Connect CLI audits to the shared engine and print progress and results.                                                    |
+| T017 | Warn and require acknowledgement before storing successful plaintext/hash pairs.                                           |
+| T018 | Implement loopback-only Flask serving and CSRF protection.                                                                 |
+| T019 | Add web job start, status, and cancellation routes.                                                                        |
+| T020 | Validate 100 MiB uploads and clean up temporary files.                                                                     |
+| T021 | Set up Astro, React, Tailwind, and frontend build scripts.                                                                 |
+| T022 | Build dashboard controls for hash identification, algorithm ambiguity, mode, charset, limits, and workers.                 |
 | T023 | Connect audit requests, progress polling, cancellation, plaintext/hash results, and the pre-run retention acknowledgement. |
-| T024 | Style forms, progress, warnings, and results with Tailwind. |
-| T025 | Build and package static frontend assets served by Flask; document local launch. |
+| T024 | Style forms, progress, warnings, and results with Tailwind.                                                                |
+| T025 | Build and package static frontend assets served by Flask; document local launch.                                           |
 
 ### Phase 4: Result Storage & Audit Logging — T026–T033
 
-| Task | Work |
-|---|---|
-| T026 | Create SQLite schema and local connection handling. |
+| Task | Work                                                                                        |
+| ---- | ------------------------------------------------------------------------------------------- |
+| T026 | Create SQLite schema and local connection handling.                                         |
 | T027 | Save target hash, algorithm, mode, status, worker count, attempts, duration, and timestamp. |
-| T028 | Save successful plaintext/hash pairs and show the sensitive-data warning. |
-| T029 | Connect CLI terminal outcomes to SQLite. |
-| T030 | Add history listing and CSV/JSON export. |
-| T031 | Add dashboard history and successful result display. |
-| T032 | Document records, database location, exports, and retention warning. |
-| T033 | Walk through the phase validation scenarios with synthetic data and refine the quickstart. |
+| T028 | Save successful plaintext/hash pairs and show the sensitive-data warning.                   |
+| T029 | Connect CLI terminal outcomes to SQLite.                                                    |
+| T030 | Add history listing and CSV/JSON export.                                                    |
+| T031 | Add dashboard history and successful result display.                                        |
+| T032 | Document records, database location, exports, and retention warning.                        |
+| T033 | Walk through the phase validation scenarios with synthetic data and refine the quickstart.  |
 
 ## Planned Repository Layout
 
@@ -252,3 +261,10 @@ The repository includes the [MIT License](LICENSE.md). Replace `[Copyright Holde
 - [Quickstart and validation scenarios](specs/001-offline-password-audit/quickstart.md)
 - [CLI contract](specs/001-offline-password-audit/contracts/cli.md)
 - [Web contract](specs/001-offline-password-audit/contracts/web.md)
+  <!-- ===================== FOOTER ===================== -->
+  <div align="center">
+    <img 
+      src="https://capsule-render.vercel.app/api?type=waving&color=gradient&height=100&section=footer"
+      width="100%"
+    />
+  </div>
