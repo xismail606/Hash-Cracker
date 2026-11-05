@@ -8,7 +8,7 @@ import hashlib
 
 import pytest
 
-from password_audit.hashing import _md4_hex, hash_candidate
+from password_audit.hashing import _md4_hex, hash_candidate, verify_candidate
 
 RFC1320_VECTORS = {
     b"": "31d6cfe0d16ae931b73c59d7e0c089c0",
@@ -91,3 +91,48 @@ class TestSaltedFormats:
     def test_unsalted_rejects_salt(self):
         with pytest.raises(ValueError, match="does not take a salt"):
             hash_candidate("hashcat", "md5", "343141")
+
+
+class TestPhase10Formats:
+    def test_ripemd160_hashcat_example(self):
+        # hashcat mode 600: RIPEMD-160 of "hashcat"
+        assert hash_candidate("hashcat", "ripemd160") == "012cb9b334ec1aeb71a9c8ce85586082467f7eb6"
+
+    def test_sha512_variants_match_hashlib(self):
+        import hashlib
+
+        for algorithm, digest_name in (("sha512_224", "sha512_224"), ("sha512_256", "sha512_256")):
+            assert hash_candidate("hashcat", algorithm) == hashlib.new(
+                digest_name, b"hashcat"
+            ).hexdigest()
+
+    def test_adaptive_bcrypt_verify(self):
+        stored = "$2a$05$MBCzKhG1KhezLh.0LRa0Kuw12nLJtpHy6DIaU.JAnqJUDYspHC.Ou"
+        assert verify_candidate("hashcat", "bcrypt", stored) is True
+        assert verify_candidate("nope", "bcrypt", stored) is False
+
+    def test_adaptive_phpass_verify(self):
+        stored = "$P$946647711V1klyitUYhtB8Yw5DMA/w."
+        assert verify_candidate("hashcat", "phpass", stored) is True
+        assert verify_candidate("nope", "phpass", stored) is False
+
+    def test_adaptive_sha512crypt_verify(self):
+        stored = (
+            "$6$72820166$U4DVzpcYxgw7MVVDGGvB2/H5lRistD5.Ah4upwENR5UtffLR4X4SxSzf"
+            "REv8z6wVl0jRFX40/KnYVvK4829kD1"
+        )
+        # hashcat mode 1800 example (plaintext "hashcat")
+        assert verify_candidate("hashcat", "sha512crypt", stored) is True
+        assert verify_candidate("nope", "sha512crypt", stored) is False
+
+    def test_adaptive_prefix_detection(self):
+        from password_audit.algorithms import assess_hash
+
+        stored = "$2a$05$MBCzKhG1KhezLh.0LRa0Kuw12nLJtpHy6DIaU.JAnqJUDYspHC.Ou"
+        assessment = assess_hash(stored)
+        assert assessment.compatible_algorithms == ("bcrypt",)
+        assert assessment.normalized == stored
+
+    def test_verify_candidate_fast_formats(self):
+        assert verify_candidate("hashcat", "md5", "8743b52063cd84097a65d1633f5c74f5") is True
+        assert verify_candidate("nope", "md5", "8743b52063cd84097a65d1633f5c74f5") is False

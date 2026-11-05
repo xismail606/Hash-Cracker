@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .bruteforce import DEFAULT_BUDGET, HARD_MAX_BUDGET
-from .hashing import hash_candidate
+from .hashing import hash_candidate, verify_candidate
 
 MIN_WORKERS = 1
 MAX_WORKERS = 8
@@ -35,6 +35,7 @@ STATUS_BUDGET_EXHAUSTED = "budget_exhausted"
 STATUS_INTERRUPTED = "interrupted"
 STATUS_INVALID_INPUT = "invalid_input"
 STATUS_STORAGE_ERROR = "storage_error"
+STATUS_PAUSED = "paused"
 
 # How many batches may be outstanding at once; keeps memory bounded while
 # keeping every worker fed.
@@ -47,7 +48,12 @@ class EngineInputError(ValueError):
 
 @dataclass
 class RunResult:
-    """Terminal outcome of one audit run."""
+    """Terminal outcome of one audit run.
+
+    A paused run is not terminal: ``status`` is ``paused`` and ``resume``
+    carries the state needed to continue (attempts already counted and the
+    number of source candidates to skip on resume).
+    """
 
     status: str
     attempts: int
@@ -55,6 +61,27 @@ class RunResult:
     workers: int
     matched_plaintext: str | None = None
     message: str = ""
+    resume: dict | None = None
+
+
+def skip_source(batch_source: Iterator[list[str]], skip_count: int) -> Iterator[list[str]]:
+    """Yield ``batch_source`` minus its first ``skip_count`` candidates.
+
+    Used to resume a run: the skipped candidates were already submitted by the
+    paused pass. Fast for dictionary streams (read-and-discard) and for
+    deterministic brute-force generators (regenerate-and-discard).
+    """
+    remaining = skip_count
+    if remaining <= 0:
+        yield from batch_source
+        return
+    for batch in batch_source:
+        if remaining >= len(batch):
+            remaining -= len(batch)
+            continue
+        yield batch[remaining:]
+        yield from batch_source
+        return
 
 
 def clamp_workers(workers: int) -> int:
@@ -77,7 +104,7 @@ def _hash_batch(
     so it can be pickled with the spawn start method on Windows.
     """
     for index, candidate in enumerate(batch):
-        if hash_candidate(candidate, algorithm, salt) == target:
+        if verify_candidate(candidate, algorithm, target, salt):
             return index, candidate
     return None
 
@@ -93,6 +120,8 @@ def run_audit(
     salt: str | None = None,
     cancel_event: Any = None,
     progress_callback: Callable[[int, int, float | None], None] | None = None,
+    pause_event: Any = None,
+    resume_state: dict | None = None,
 ) -> RunResult:
     """Compare candidates from ``batch_source`` against ``target_hash``.
 
@@ -110,6 +139,11 @@ def run_audit(
     if not salt:
         salt = None  # normalize empty-string salts from form inputs to None
     workers = clamp_workers(workers)
+    attempts_base = 0
+    skip_count = 0
+    if resume_state:
+        attempts_base = int(resume_state.get("attempts_base", 0))
+        skip_count = int(resume_state.get("skip_source", 0))
     if budget is None:
         budget = DEFAULT_BUDGET if total_space is not None else None
     elif budget < 1 or budget > HARD_MAX_BUDGET:
@@ -120,10 +154,12 @@ def run_audit(
         budget = min(budget, HARD_MAX_BUDGET)
     # For brute force the budget is a real stop when the configured space is
     # larger than it; a fully covered space simply ends as no_match.
-    budget_is_limit = budget is not None and total_space is not None and total_space > budget
+    budget_is_limit = budget is not None and (
+        total_space is None or total_space > budget
+    )
 
     started = time.monotonic()
-    attempts = 0
+    attempts = attempts_base
     submitted = 0
     matched: str | None = None
     cancelled = False
@@ -148,15 +184,20 @@ def run_audit(
             message=message,
         )
 
+    paused = False
     interrupted = False
     try:
-        batch_iter = iter(batch_source)
+        batch_iter = skip_source(iter(batch_source), skip_count)
         exhausted = False
         while True:
             # Submit new batches while there is capacity and no stop signal.
             while not exhausted and len(pending) < max_outstanding:
                 if cancel_event is not None and cancel_event.is_set():
                     cancelled = True
+                    break
+                if pause_event is not None and pause_event.is_set():
+                    paused = True
+                    exhausted = True
                     break
                 if budget is not None and submitted >= budget:
                     budget_stopped = True
@@ -208,7 +249,189 @@ def run_audit(
             status = STATUS_INTERRUPTED
         elif cancelled:
             status = STATUS_CANCELLED
+        elif paused:
+            status = STATUS_PAUSED
         elif budget_is_limit and budget_stopped:
+            status = STATUS_BUDGET_EXHAUSTED
+        else:
+            status = STATUS_NO_MATCH
+    result = finish(status)
+    if result.status == STATUS_PAUSED:
+        result.resume = {
+            "attempts_base": result.attempts,
+            "skip_source": submitted,
+        }
+    return result
+
+
+@dataclass
+class HashlistResult:
+    """Terminal outcome of one multi-target (hashlist) audit run."""
+
+    status: str
+    attempts: int
+    elapsed_ms: int
+    workers: int
+    targets: list[dict]
+    message: str = ""
+
+
+def _hash_batch_multi(
+    batch: list[str], targets_by_algorithm: dict[str, dict[str, list[int]]]
+) -> tuple[int, list[tuple[int, str]]] | None:
+    """Hash each candidate once per target algorithm; report all matches.
+
+    ``targets_by_algorithm`` maps algorithm -> digest -> list of target ids.
+    Returns (index, [(target_id, plaintext), ...]) for the first candidate
+    that matches any target, or None. Runs inside worker processes and must
+    stay a module-level function for spawn pickling on Windows.
+    """
+    for index, candidate in enumerate(batch):
+        matched: list[tuple[int, str]] = []
+        for algorithm, digest_map in targets_by_algorithm.items():
+            digest = hash_candidate(candidate, algorithm)
+            for target_id in digest_map.get(digest, ()):
+                matched.append((target_id, candidate))
+        if matched:
+            return index, matched
+    return None
+
+
+def run_hashlist_audit(
+    targets: list[dict],
+    batch_source: Iterator[list[str]],
+    *,
+    workers: int = DEFAULT_WORKERS,
+    budget: int | None = None,
+    total_space: int | None = None,
+    cancel_event: Any = None,
+    progress_callback: Callable[[int, int, float | None], None] | None = None,
+) -> HashlistResult:
+    """Compare one candidate stream against many targets in a single pass.
+
+    ``targets`` is a list of ``{"id", "algorithm", "hash"}`` entries with
+    explicit, already-validated algorithms (see candidates.parse_hashlist).
+    The stream runs until every target has matched, the source is exhausted,
+    the budget is reached, or cancellation fires. Every candidate is hashed
+    once per distinct target algorithm and probed against all of that
+    algorithm's targets.
+
+    Returns a :class:`HashlistResult` whose ``targets`` list carries each
+    target's status, matched plaintext, and the attempt number of its match.
+    """
+    workers = clamp_workers(workers)
+    if budget is not None and (budget < 1 or budget > HARD_MAX_BUDGET):
+        raise EngineInputError(
+            f"The candidate budget must be between 1 and {HARD_MAX_BUDGET:,}."
+        )
+
+    targets_by_algorithm: dict[str, dict[str, list[int]]] = {}
+    for target in targets:
+        targets_by_algorithm.setdefault(target["algorithm"], {}).setdefault(
+            target["hash"], []
+        ).append(target["id"])
+    unmatched_count = len(targets)
+
+    started = time.monotonic()
+    attempts = 0
+    submitted = 0
+    cancelled = False
+    interrupted = False
+    budget_stopped = False
+    matched_plaintext: dict[int, str] = {}
+    matched_attempt: dict[int, int] = {}
+
+    def elapsed_ms() -> int:
+        return int((time.monotonic() - started) * 1000)
+
+    def finish(new_status: str, message: str = "") -> HashlistResult:
+        executor.shutdown(wait=False, cancel_futures=True)
+        target_results = []
+        for target in targets:
+            tid = target["id"]
+            matched = tid in matched_plaintext
+            target_results.append(
+                {
+                    "id": tid,
+                    "algorithm": target["algorithm"],
+                    "hash": target["hash"],
+                    "status": STATUS_MATCH if matched else STATUS_NO_MATCH,
+                    "matched_plaintext": matched_plaintext.get(tid),
+                    "match_at_attempt": matched_attempt.get(tid),
+                }
+            )
+        return HashlistResult(
+            status=new_status,
+            attempts=attempts,
+            elapsed_ms=elapsed_ms(),
+            workers=workers,
+            targets=target_results,
+            message=message,
+        )
+
+    max_outstanding = max(workers * _OUTSTANDING_FACTOR, 4)
+    context = multiprocessing.get_context("spawn")
+    executor = ProcessPoolExecutor(max_workers=workers, mp_context=context)
+    pending: dict[Future, tuple[int, int]] = {}  # future -> (batch_size, offset)
+
+    interrupted = False
+    try:
+        batch_iter = iter(batch_source)
+        exhausted = False
+        while True:
+            while not exhausted and len(pending) < max_outstanding:
+                if cancel_event is not None and cancel_event.is_set():
+                    cancelled = True
+                    break
+                if budget is not None and submitted >= budget:
+                    budget_stopped = True
+                    exhausted = True
+                    break
+                try:
+                    batch = next(batch_iter)
+                except StopIteration:
+                    exhausted = True
+                    break
+                offset = submitted
+                submitted += len(batch)
+                future = executor.submit(
+                    _hash_batch_multi, batch, targets_by_algorithm
+                )
+                pending[future] = (len(batch), offset)
+
+            if cancelled or not pending:
+                break
+
+            done, _ = wait(list(pending), return_when=FIRST_COMPLETED)
+            for future in sorted(done, key=lambda f: pending[f][1]):
+                batch_size, offset = pending.pop(future)
+                hit = future.result()
+                if hit is not None:
+                    match_index, matches = hit
+                    attempts = max(attempts, offset + match_index + 1)
+                    for target_id, plaintext in matches:
+                        matched_plaintext.setdefault(target_id, plaintext)
+                        matched_attempt.setdefault(target_id, offset + match_index + 1)
+                    if len(matched_plaintext) == unmatched_count:
+                        break  # every target matched; stop early
+                else:
+                    attempts = max(attempts, offset + batch_size)
+                if progress_callback is not None:
+                    fraction = min(attempts / total_space, 1.0) if total_space else None
+                    progress_callback(attempts, elapsed_ms(), fraction)
+            else:
+                continue
+            break
+    except KeyboardInterrupt:
+        interrupted = True
+    finally:
+        if interrupted:
+            status = STATUS_INTERRUPTED
+        elif cancelled:
+            status = STATUS_CANCELLED
+        elif matched_plaintext:
+            status = STATUS_MATCH
+        elif budget_stopped:
             status = STATUS_BUDGET_EXHAUSTED
         else:
             status = STATUS_NO_MATCH

@@ -18,6 +18,8 @@ The dashboard uses Astro, React, JavaScript, and Tailwind CSS. Flask serves the 
 - Offers dictionary and brute-force modes.
 - Offers the salted fast-hash formats (`md5($pass.$salt)` … `sha512($salt.$pass)`) in an advanced format select with a required salt field; the backend rejects salted starts without a salt and unsalted formats with one.
 - Dictionary mode accepts one UTF-8 wordlist upload up to 100 MiB.
+- An optional hashlist upload (same format as the CLI hashlist) audits many targets in one pass; it replaces the single hash field and its per-target results are shown in a results table with the batch ID.
+- Dictionary mode offers mutation-rule presets that expand candidates inside the candidate budget.
 - Brute-force mode requires a selected charset, minimum length, maximum length, and candidate budget; the budget defaults to 1,000,000 and cannot exceed 10,000,000.
 - Offers worker counts from 1 through 8, defaulting to 4.
 - Requires acknowledgement of the local plaintext/hash retention warning before an audit begins.
@@ -29,7 +31,9 @@ The dashboard uses Astro, React, JavaScript, and Tailwind CSS. Flask serves the 
 - `POST /api/audits` accepts a mode-specific request. Dictionary mode uses a multipart wordlist upload; brute-force mode accepts charset, length range, and candidate budget fields.
 - `GET /api/audits/{job_id}` returns state, attempts, budget, elapsed time, worker count, and terminal outcome. It returns plaintext and target hash on a successful match, consistent with the project requirements.
 - `POST /api/audits/{job_id}/cancel` requests cancellation.
-- `GET /api/history` returns local audit records, including successful plaintext/hash pairs.
+- `GET /api/history` returns local audit records, including successful plaintext/hash pairs; encrypted rows show `<encrypted>` until `POST /api/history/unlock` succeeds with the passphrase.
+- `GET /api/export?format=csv|json` downloads the full history as an attachment.
+- `POST /api/audits/{id}/pause` and `POST /api/audits/{id}/resume` checkpoint and continue single-target jobs (refused for hashlist and rule-expanded runs).
 - `POST /api/history/clear` permanently deletes every local audit record (including saved plaintext/hash pairs) and returns the number of removed rows. It is destructive, CSRF-protected, and intended for the dashboard's confirmation dialog; a job that is already running still records its own outcome afterwards.
 - State-changing requests require an anti-CSRF token and are available only from the loopback server.
 

@@ -88,3 +88,12 @@ Total core (5–9): roughly 7–10 working sessions.
 - Rule expansion can explode memory if applied to huge batches — mitigated by expanding per submitted batch only.
 - Encryption adds an unlock step that can frustrate — kept strictly opt-in; unencrypted mode remains the default.
 - Adaptive formats (research) can stall runs for minutes per candidate — quarantined behind an explicit `--slow-formats` acknowledge flag if ever merged.
+
+## Implementation Notes (recorded during implementation)
+
+- Phases 8–10 completed 2026-11-06. Pause/resume works for single-target dictionary and brute-force runs (refused for hashlist and rule-expanded streams); resume validates dictionary wordlist size.
+- Encryption is application-level: scrypt-derived key from an operator passphrase, Fernet over the `matched_plaintext` column only, per-database salt + verification token in a `history_meta` table. Requires the optional `encrypt` extra (`pip install password-audit[encrypt]`).
+- Adaptive formats verify via Passlib handlers against the full stored hash string (`verify_candidate`); bcrypt needs the pinned `bcrypt>=3.2,<4.1` backend (`adaptive` extra) because passlib 1.7.4 breaks with bcrypt >= 4.1. Adaptive targets are recognized by prefix in `assess_hash`.
+- RIPEMD-160 research (T074) succeeded: a pure-Python implementation validated against the official vectors and hashcat mode 600; 40-hex is now ambiguous between SHA-1 and RIPEMD-160. The table-authoring process initially produced wrong word-order groups; the tables were extracted programmatically from a known-good reference implementation (karpathy/cryptos) and re-validated.
+- SHA-512/224 and SHA-512/256 research (T076) succeeded via hashlib on all target platforms; 56-hex is ambiguous (SHA-224/SHA-512-224) and 64-hex is ambiguous (SHA-256/SHA-512-256).
+- Benchmark observed on the dev machine (in-process): SHA-256 ≈ 810k/s, MD5 ≈ 780k/s, SHA-512 ≈ 690k/s, MD4 ≈ 42k/s, NTLM (Passlib) ≈ 23k/s, LM ≈ 10k/s.

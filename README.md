@@ -19,7 +19,10 @@ The project demonstrates hash structure analysis, candidate generation, multipro
 
 Both interfaces will call the same Python audit engine. The engine will support:
 
-- **Dictionary mode**: compare the target against each entry in a finite local wordlist.
+- **Dictionary mode**: compare the target against each entry in a finite local wordlist, with optional mutation rules (leetspeak, digit suffixes, …).
+- **Hashlist mode**: audit many targets (one per line in a hashlist file) against one candidate stream in a single pass.
+- **Benchmark**: per-algorithm candidates/second on this machine (`benchmark` command).
+- **Pause/resume** dashboard jobs, **ETA** display, CSV/JSON **export from the dashboard**, and an option to **withhold plaintext** or **encrypt it at rest** (passphrase-based).
 - **Brute-force mode**: generate candidates from a selected character set and length range, stopping at a configured candidate budget.
 
 ## Supported Hashes
@@ -35,8 +38,14 @@ Both interfaces will call the same Python audit engine. The engine will support:
 | SHA-256   | 64 hexadecimal characters  | Yes        |
 | SHA-384   | 96 hexadecimal characters  | Yes        |
 | SHA-512   | 128 hexadecimal characters | Yes        |
+| RIPEMD-160 | 40 hexadecimal characters | Yes (pure-Python, hashcat 600) |
+| SHA-512/224 | 56 hexadecimal characters | Yes        |
+| SHA-512/256 | 64 hexadecimal characters | Yes        |
+| bcrypt    | full hash string ($2…)      | Yes (slow — see note) |
+| sha512crypt | full hash string ($6$…)   | Yes (slow — see note) |
+| phpass    | full hash string ($P$…)     | Yes (slow — see note) |
 
-Hash length and character structure help identify a format, but do not always prove the algorithm. MD5, NTLM, and MD4 share the same 32-character hexadecimal shape. The tool reports all three and requires an explicit selection. NTLM uses Passlib's `nthash`; LM uses Passlib's `lmhash` and compares only the first 8-byte DES block (16 hex), matching the format hashcat uses — a 16-hex LM target identifies passwords by their first seven characters. MD5, SHA-1, SHA-224, SHA-256, SHA-384, and SHA-512 use Python's `hashlib`; MD4 reuses the pure-Python MD4 implementation from the NTLM fallback (validated against RFC 1320 test vectors). Eight salted fast-hash formats are also supported (`md5($pass.$salt)`, `md5($salt.$pass)`, `sha1($pass.$salt)`, `sha1($salt.$pass)`, `sha256($pass.$salt)`, `sha256($salt.$pass)`, `sha512($pass.$salt)`, `sha512($salt.$pass)`) — pass the known salt with `--salt` (CLI) or the dashboard salt field. Adaptive formats (bcrypt, sha512crypt, phpass) remain out of scope; see the [v2 expansion plan](specs/002-feature-expansion/).
+Hash length and character structure help identify a format, but do not always prove the algorithm. MD5, NTLM, and MD4 share the same 32-character hexadecimal shape. The tool reports all three and requires an explicit selection. NTLM uses Passlib's `nthash`; LM uses Passlib's `lmhash` and compares only the first 8-byte DES block (16 hex), matching the format hashcat uses — a 16-hex LM target identifies passwords by their first seven characters. MD5, SHA-1, SHA-224, SHA-256, SHA-384, and SHA-512 use Python's `hashlib`; MD4 reuses the pure-Python MD4 implementation from the NTLM fallback (validated against RFC 1320 test vectors). RIPEMD-160 is a dependency-free pure-Python implementation validated against the official test vectors. Adaptive formats (bcrypt, sha512crypt, phpass) verify against the full stored hash string via Passlib and are extremely slow — keep their brute-force budgets small (the `benchmark` command reports real per-algorithm throughput). Eight salted fast-hash formats are also supported (`md5($pass.$salt)`, `md5($salt.$pass)`, `sha1($pass.$salt)`, `sha1($salt.$pass)`, `sha256($pass.$salt)`, `sha256($salt.$pass)`, `sha512($pass.$salt)`, `sha512($salt.$pass)`) — pass the known salt with `--salt` (CLI) or the dashboard salt field. Adaptive formats (bcrypt, sha512crypt, phpass) remain out of scope; see the [v2 expansion plan](specs/002-feature-expansion/).
 
 ## Features in Scope
 
@@ -233,7 +242,25 @@ This layout is implemented; `static/` holds the Astro build output (gitignored) 
 
 Requirements: Python 3.11+, Node.js/npm compatible with Astro, and a modern browser. Internet access may be required to install dependencies, but audit operations are designed to run offline. The application runs on **Windows, Linux, and macOS**.
 
-### Windows (PowerShell)
+### One-command setup (recommended)
+
+Download the repository and run the setup script for your platform — it installs Python dependencies (with all extras), Node dependencies, and builds the dashboard:
+
+```powershell
+# Windows
+powershell -ExecutionPolicy Bypass -File .\setup.ps1
+```
+
+```bash
+# Linux / macOS / Git Bash
+./setup.sh
+```
+
+Both scripts are idempotent (safe to re-run) and run the test suite at the end. `setup.ps1 -SkipFrontend` / `./setup.sh --skip-frontend` skip the npm steps.
+
+### Manual setup
+
+#### Windows (PowerShell)
 
 ```powershell
 python -m venv .venv

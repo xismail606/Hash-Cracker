@@ -17,6 +17,7 @@ import argparse
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 
 from .algorithms import (
@@ -26,6 +27,7 @@ from .algorithms import (
     is_salted,
     select_algorithm,
 )
+from .benchmark import measure_all
 from .bruteforce import (
     DEFAULT_BUDGET,
     HARD_MAX_BUDGET,
@@ -34,10 +36,11 @@ from .bruteforce import (
     resolve_charset,
     validate_bruteforce_options,
 )
-from .candidates import count_dictionary_lines, iter_wordlist_batches
+from .candidates import count_dictionary_lines, iter_wordlist_batches, parse_hashlist
 from .engine import (
     DEFAULT_WORKERS,
     EngineInputError,
+    run_hashlist_audit,
     STATUS_BUDGET_EXHAUSTED,
     clamp_workers,
     STATUS_CANCELLED,
@@ -47,6 +50,7 @@ from .engine import (
     STATUS_STORAGE_ERROR,
     run_audit,
 )
+from .rules import iter_rule_expanded, resolve_rules_preset
 from .history import (
     DEFAULT_DB_PATH,
     HistoryError,
@@ -54,6 +58,12 @@ from .history import (
     export_csv,
     export_json,
     list_runs,
+    decrypt_stored,
+    derive_key,
+    ensure_encryption_salt,
+    init_encryption,
+    is_encrypted_value,
+    record_batch,
     record_run,
     utc_now,
 )
@@ -124,24 +134,65 @@ def _confirm_retention(assumed_yes: bool) -> bool:
 
 
 def cmd_audit(args: argparse.Namespace) -> int:
-    try:
-        assessment, algorithm = select_algorithm(args.hash, args.algorithm)
-    except HashInputError as exc:
-        print(f"Invalid hash input: {exc}", file=sys.stderr)
+    # Target selection: exactly one of a positional hash or --hashlist.
+    if args.hashlist and args.hash:
+        print("Provide either HASH or --hashlist PATH, not both.", file=sys.stderr)
         return EXIT_INVALID
-    target_hash = assessment.normalized
+    if not args.hashlist and not args.hash:
+        print("Provide HASH or --hashlist PATH.", file=sys.stderr)
+        return EXIT_INVALID
+
+    # Rules apply to dictionary mode only.
+    rules_name = getattr(args, "rules", "none")
+    variants_for = None
+    if rules_name and rules_name != "none":
+        if args.mode != "dictionary":
+            print("--rules applies to dictionary mode only.", file=sys.stderr)
+            return EXIT_INVALID
+        try:
+            variants_for = resolve_rules_preset(rules_name)
+        except ValueError as exc:
+            print(f"Invalid audit options: {exc}", file=sys.stderr)
+            return EXIT_INVALID
 
     salt = getattr(args, "salt", None)
-    if is_salted(algorithm) and not salt:
-        print(
-            f"Salted format {algorithm} requires --salt VALUE "
-            "(the known salt stored alongside the hash).",
-            file=sys.stderr,
-        )
-        return EXIT_INVALID
-    if salt and not is_salted(algorithm):
-        print(f"Algorithm {algorithm} does not take a salt; remove --salt.", file=sys.stderr)
-        return EXIT_INVALID
+    targets = None
+    algorithm = None
+    target_hash = None
+
+    if args.hashlist:
+        try:
+            targets = parse_hashlist(args.hashlist)
+        except HashInputError as exc:
+            print(f"Invalid hashlist: {exc}", file=sys.stderr)
+            return EXIT_INVALID
+        if salt:
+            print("--salt is not supported with hashlists (no per-target salt).",
+                  file=sys.stderr)
+            return EXIT_INVALID
+        if getattr(args, "algorithm", None):
+            print("--algorithm is ignored with --hashlist; each line carries its "
+                  "own algorithm.", file=sys.stderr)
+            return EXIT_INVALID
+    else:
+        try:
+            assessment, algorithm = select_algorithm(args.hash, args.algorithm)
+        except HashInputError as exc:
+            print(f"Invalid hash input: {exc}", file=sys.stderr)
+            return EXIT_INVALID
+        target_hash = assessment.normalized
+
+        if is_salted(algorithm) and not salt:
+            print(
+                f"Salted format {algorithm} requires --salt VALUE "
+                "(the known salt stored alongside the hash).",
+                file=sys.stderr,
+            )
+            return EXIT_INVALID
+        if salt and not is_salted(algorithm):
+            print(f"Algorithm {algorithm} does not take a salt; remove --salt.",
+                  file=sys.stderr)
+            return EXIT_INVALID
 
     try:
         workers = clamp_workers(args.workers)
@@ -161,6 +212,10 @@ def cmd_audit(args: argparse.Namespace) -> int:
             total_space = count_dictionary_lines(wordlist)
             budget = None
             batch_source = iter_wordlist_batches(wordlist)
+            if variants_for is not None:
+                budget = args.max_candidates
+                total_space = None
+                batch_source = iter_rule_expanded(batch_source, variants_for, budget)
         elif args.mode == "brute-force":
             alphabet = resolve_charset(args.charset)
             alphabet, total_space = validate_bruteforce_options(
@@ -186,37 +241,70 @@ def cmd_audit(args: argparse.Namespace) -> int:
         return EXIT_INVALID
 
     mode_label = "dictionary" if args.mode == "dictionary" else "brute-force"
-    print(f"Algorithm : {algorithm.upper()}")
     print(f"Mode      : {mode_label}")
-    print(f"Workers   : {workers}")
+    if targets is not None:
+        print(f"Hashlist  : {len(targets)} targets")
+        print(f"Workers   : {workers}")
+    else:
+        print(f"Algorithm : {algorithm.upper()}")
+        print(f"Workers   : {workers}")
     if args.mode == "brute-force":
         print(f"Charset   : {''.join(sorted(alphabet))!r} ({len(alphabet)} characters)")
         print(f"Lengths   : {args.min_length}..{args.max_length}")
         print(f"Budget    : {budget:,} candidates (hard max {HARD_MAX_BUDGET:,})")
+    if variants_for is not None:
+        print(f"Rules     : {rules_name}")
 
     cancel_event = threading.Event()
     started_at = utc_now()
     progress_at = [0.0]
+    progress_rate = [0.0, 0.0]  # (monotonic timestamp, attempts at timestamp)
 
     def progress(attempts: int, elapsed_ms: int, fraction: float | None) -> None:
         now = time.monotonic()
         if now - progress_at[0] >= 0.25:
-            progress_at[0] = now
+            prev_t, prev_a = progress_rate[0], progress_rate[1]
+            if prev_t and now > prev_t and attempts >= prev_a:
+                progress_rate[0] = now
+                progress_rate[1] = attempts
+            elif not prev_t:
+                progress_rate[0] = now
+                progress_rate[1] = attempts
             _print_progress(attempts, elapsed_ms, fraction)
+            # ETA when a bounded total is known.
+            if total_space and total_space > attempts and progress_rate[0] > prev_t:
+                rate = (progress_rate[1] - prev_a) / (progress_rate[0] - prev_t)
+                if rate > 0:
+                    remaining = (total_space - attempts) / rate
+                    print(
+                        f"\r  ETA ~{remaining:.0f}s ({rate:,.0f} candidates/s)   ",
+                        end="", file=sys.stderr, flush=True,
+                    )
 
     print("Starting audit; press Ctrl+C to interrupt...")
     try:
-        result = run_audit(
-            target_hash,
-            algorithm,
-            batch_source,
-            workers=workers,
-            budget=budget,
-            total_space=total_space,
-            salt=salt,
-            cancel_event=cancel_event,
-            progress_callback=progress,
-        )
+        if targets is not None:
+            result = run_hashlist_audit(
+                targets,
+                batch_source,
+                workers=workers,
+                budget=budget,
+                total_space=total_space,
+                cancel_event=cancel_event,
+                progress_callback=progress,
+            )
+        else:
+            result = run_audit(
+                target_hash,
+                algorithm,
+                batch_source,
+                workers=workers,
+                budget=budget,
+                total_space=total_space,
+                salt=salt,
+                cancel_event=cancel_event,
+                progress_callback=progress,
+            )
     except EngineInputError as exc:
         print(f"Invalid audit options: {exc}", file=sys.stderr)
         return EXIT_INVALID
@@ -228,7 +316,17 @@ def cmd_audit(args: argparse.Namespace) -> int:
     print(f"Elapsed   : {result.elapsed_ms / 1000:.2f}s")
     print(f"Workers   : {result.workers}")
 
-    if result.status == STATUS_MATCH:
+    if targets is not None:
+        matched_count = sum(1 for t in result.targets if t["status"] == STATUS_MATCH)
+        print(f"Targets   : {matched_count}/{len(result.targets)} matched")
+        for t in result.targets:
+            mark = "MATCH   " if t["status"] == STATUS_MATCH else "no match"
+            plaintext = t["matched_plaintext"] if t["matched_plaintext"] is not None else "-"
+            print(
+                f"  [{mark}] {t['algorithm']:<16} {t['hash'][:20]}...  "
+                f"plaintext={plaintext}"
+            )
+    elif result.status == STATUS_MATCH:
         print(f"Plaintext : {result.matched_plaintext}")
         print(f"Hash      : {target_hash}")
         print(
@@ -236,24 +334,87 @@ def cmd_audit(args: argparse.Namespace) -> int:
             "history as sensitive audit data."
         )
 
+    withhold = getattr(args, "no_store_plaintext", False)
+    plaintext_key = None
+    if getattr(args, "encrypt", False):
+        if withhold:
+            print("--encrypt and --no-store-plaintext are mutually exclusive.", file=sys.stderr)
+            return EXIT_INVALID
+        passphrase = _resolve_passphrase(args, confirm=not args.passphrase)
+        if not passphrase:
+            print("Passphrases do not match or are empty; the audit was not started.",
+                  file=sys.stderr)
+            return EXIT_INVALID
+        try:
+            conn = connect(args.database)
+            plaintext_key = init_encryption(conn, passphrase)
+            conn.close()
+        except HistoryError as exc:
+            print(f"History encryption failed: {exc}", file=sys.stderr)
+            return EXIT_INVALID
+
+    if withhold and targets is None and result.status == STATUS_MATCH:
+        print(
+            "Plaintext withheld from local history (--no-store-plaintext);\n"
+            "the match above is displayed for this session only."
+        )
+
     # Persist the terminal outcome locally.
     try:
         conn = connect(args.database)
-        record_run(
-            conn,
-            target_hash=target_hash,
-            algorithm=algorithm,
-            mode=mode_label,
-            status=result.status,
-            attempts=result.attempts,
-            elapsed_ms=result.elapsed_ms,
-            worker_count=result.workers,
-            started_at=started_at,
-            matched_plaintext=(
-                result.matched_plaintext if result.status == STATUS_MATCH else None
-            ),
-            salt=salt,
-        )
+        if targets is not None:
+            batch_id = uuid.uuid4().hex
+            record_batch(
+                conn,
+                batch_id=batch_id,
+                mode=mode_label,
+                status=result.status,
+                attempts=result.attempts,
+                elapsed_ms=result.elapsed_ms,
+                worker_count=result.workers,
+                started_at=started_at,
+                target_count=len(result.targets),
+            )
+            for t in result.targets:
+                record_run(
+                    conn,
+                    target_hash=t["hash"],
+                    algorithm=t["algorithm"],
+                    mode=mode_label,
+                    status=t["status"],
+                    attempts=(
+                        t["match_at_attempt"]
+                        if t["match_at_attempt"] is not None
+                        else result.attempts
+                    ),
+                    elapsed_ms=result.elapsed_ms,
+                    worker_count=result.workers,
+                    started_at=started_at,
+                    matched_plaintext=t["matched_plaintext"],
+                    batch_id=batch_id,
+                    plaintext_key=plaintext_key,
+                )
+            print(f"Batch     : {batch_id[:8]} ({len(result.targets)} target records)")
+        else:
+            record_run(
+                conn,
+                target_hash=target_hash,
+                algorithm=algorithm,
+                mode=mode_label,
+                status=result.status,
+                attempts=result.attempts,
+                elapsed_ms=result.elapsed_ms,
+                worker_count=result.workers,
+                started_at=started_at,
+                matched_plaintext=(
+                    None
+                    if withhold
+                    else (result.matched_plaintext if result.status == STATUS_MATCH else None)
+                ),
+                salt=salt,
+                plaintext_withheld=withhold,
+                plaintext_key=plaintext_key,
+            )
         conn.close()
     except HistoryError as exc:
         print(f"History storage failed: {exc}", file=sys.stderr)
@@ -264,8 +425,6 @@ def cmd_audit(args: argparse.Namespace) -> int:
         return EXIT_STORAGE
 
     return _exit_for_status(result.status)
-
-
 def _exit_for_status(status: str) -> int:
     if status in (STATUS_MATCH, STATUS_NO_MATCH, STATUS_BUDGET_EXHAUSTED):
         return EXIT_OK
@@ -274,8 +433,10 @@ def _exit_for_status(status: str) -> int:
     return EXIT_STORAGE if status == STATUS_STORAGE_ERROR else EXIT_INVALID
 
 
-def _format_record(record) -> str:
-    plaintext = record.matched_plaintext if record.matched_plaintext is not None else "-"
+def _format_record(record, display_plaintext=None) -> str:
+    plaintext = display_plaintext(record.matched_plaintext) if display_plaintext else (
+        record.matched_plaintext if record.matched_plaintext is not None else "-"
+    )
     return (
         f"#{record.run_id}  {record.started_at}  {record.status:<18}"
         f"  {record.algorithm:<6}  {record.mode:<11}  {record.attempts:>10,}"
@@ -284,7 +445,52 @@ def _format_record(record) -> str:
     )
 
 
+def _resolve_passphrase(args, confirm: bool) -> str | None:
+    """Passphrase from --passphrase, PASSWORD_AUDIT_PASSPHRASE, or a prompt.
+
+    --passphrase VALUE is visible in the process list; it exists for scripted
+    use on this single-user local machine. Prompting uses getpass, which on
+    Windows reads the console directly.
+    """
+    value = getattr(args, "passphrase", None)
+    if value:
+        return value
+    import os
+
+    value = os.environ.get("PASSWORD_AUDIT_PASSPHRASE")
+    if value:
+        return value
+    import getpass
+
+    value = getpass.getpass("History encryption passphrase: ")
+    if confirm:
+        confirm_value = getpass.getpass("Confirm passphrase: ")
+        if value != confirm_value or not value:
+            return None
+    return value or None
+
+
 def cmd_history(args: argparse.Namespace) -> int:
+    plaintext_key = None
+    if getattr(args, "unlock", False):
+        try:
+            conn = connect(args.database)
+            passphrase = _resolve_passphrase(args, confirm=False)
+            plaintext_key = init_encryption(conn, passphrase)
+            conn.close()
+        except HistoryError as exc:
+            print(f"Unlock failed: {exc}", file=sys.stderr)
+            return EXIT_STORAGE
+
+    def display_plaintext(value):
+        if value is None:
+            return "-"
+        if is_encrypted_value(value):
+            if plaintext_key is None:
+                return "<encrypted>"
+            return decrypt_stored(plaintext_key, value)
+        return value
+
     try:
         conn = connect(args.database)
         records = list_runs(conn, limit=args.limit)
@@ -301,7 +507,7 @@ def cmd_history(args: argparse.Namespace) -> int:
         f"{'Mode':<11}  {'Attempts':>10}  {'Elapsed':>9}  W  Hash / plaintext"
     )
     for record in records:
-        print(_format_record(record))
+        print(_format_record(record, display_plaintext))
     print(
         "\nSuccessful matches store the recovered plaintext/hash pair locally;\n"
         "treat this database as sensitive credential data."
@@ -322,6 +528,35 @@ def cmd_export(args: argparse.Namespace) -> int:
         return EXIT_STORAGE
     print(f"Exported local audit history to {target}")
     print("The report contains sensitive plaintext/hash pairs for successful matches.")
+    return EXIT_OK
+
+
+def cmd_benchmark(args: argparse.Namespace) -> int:
+    names = [n.strip().lower() for n in args.algorithms.split(",") if n.strip()]
+    invalid = [n for n in names if n not in ALGORITHM_NAMES]
+    if invalid:
+        print(
+            f"Unknown algorithms: {', '.join(invalid)}. Supported: {', '.join(ALGORITHM_NAMES)}.",
+            file=sys.stderr,
+        )
+        return EXIT_INVALID
+    print(f"Benchmarking {len(names)} algorithms, {args.seconds:.1f}s each (in-process, CPU-bound):")
+    results = []
+    for name in names:
+        print(f"  {name:<16} ", end="", flush=True)
+        try:
+            r = measure_all([name], seconds=args.seconds)[0]
+        except Exception as exc:
+            print(f"unavailable ({exc})")
+            continue
+        results.append(r)
+        print(f"{r['hashes_per_second']:>14,.0f} candidates/s  ({r['hashed']:,} hashed in {r['elapsed_ms']}ms)")
+    if results:
+        best = max(results, key=lambda r: r["hashes_per_second"])
+        print(
+            f"\nFastest: {best['algorithm']} at {best['hashes_per_second']:,.0f} candidates/s. "
+            "Use this to pick a realistic brute-force budget on this machine."
+        )
     return EXIT_OK
 
 
@@ -366,7 +601,20 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[db_parent],
         help="Run a dictionary or brute-force audit",
     )
-    p_audit.add_argument("hash", help="The target hash to audit")
+    p_audit.add_argument(
+        "hash", nargs="?", default=None,
+        help="The target hash to audit (or use --hashlist)",
+    )
+    p_audit.add_argument(
+        "--hashlist",
+        help="Path to a hashlist file: one target per line, optional algorithm:hash prefix",
+    )
+    p_audit.add_argument(
+        "--rules",
+        default="none",
+        help="Mutation preset for dictionary mode: capitalize, upper, lower, "
+        "leetspeak, append_digits_0_99, append_years, all (default: none)",
+    )
     p_audit.add_argument(
         "--algorithm",
         choices=ALGORITHM_NAMES,
@@ -403,6 +651,20 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Multiprocessing worker count 1-8 (default: {DEFAULT_WORKERS})",
     )
     p_audit.add_argument(
+        "--encrypt",
+        action="store_true",
+        help="Encrypt the stored plaintext in history (prompts for a passphrase)",
+    )
+    p_audit.add_argument(
+        "--passphrase",
+        help="Encryption passphrase (visible in the process list; scripted use only)",
+    )
+    p_audit.add_argument(
+        "--no-store-plaintext",
+        action="store_true",
+        help="Record match metadata without storing the recovered plaintext",
+    )
+    p_audit.add_argument(
         "--yes",
         action="store_true",
         help="Acknowledge the local plaintext/hash retention warning non-interactively",
@@ -413,6 +675,15 @@ def build_parser() -> argparse.ArgumentParser:
         "history", parents=[db_parent], help="List local audit records"
     )
     p_history.add_argument("--limit", type=int, default=None, help="Show only the newest N records")
+    p_history.add_argument(
+        "--passphrase",
+        help="Encryption passphrase (visible in the process list; scripted use only)",
+    )
+    p_history.add_argument(
+        "--unlock",
+        action="store_true",
+        help="Prompt for the encryption passphrase and decrypt stored plaintexts for display",
+    )
     p_history.set_defaults(func=cmd_history)
 
     p_export = subparsers.add_parser(
@@ -421,6 +692,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_export.add_argument("path", help="Output file path (local)")
     p_export.add_argument("--format", choices=("csv", "json"), default="csv", help="Report format")
     p_export.set_defaults(func=cmd_export)
+
+    p_benchmark = subparsers.add_parser(
+        "benchmark",
+        help="Measure per-algorithm hashing throughput on this machine",
+    )
+    p_benchmark.add_argument(
+        "--seconds", type=float, default=2.0,
+        help="Wall-clock slice per algorithm (default: 2.0)",
+    )
+    p_benchmark.add_argument(
+        "--algorithms",
+        default=",".join(a for a in ALGORITHM_NAMES if not is_salted(a)),
+        help="Comma-separated algorithm names (default: all unsalted formats)",
+    )
+    p_benchmark.set_defaults(func=cmd_benchmark)
 
     p_serve = subparsers.add_parser("serve", help="Start the local web dashboard")
     p_serve.add_argument("--port", type=int, default=8765, help="Local port (default: 8765)")
@@ -454,7 +740,7 @@ def main(argv: list[str] | None = None) -> int:
                     file=sys.stderr,
                 )
                 return EXIT_INVALID
-        if args.algorithm is None:
+        if args.algorithm is None and not args.hashlist:
             try:
                 assessment = assess_hash(args.hash)
             except HashInputError as exc:

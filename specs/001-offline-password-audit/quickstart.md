@@ -75,6 +75,47 @@ python -m password_audit audit 3d83c8e717ff0e7ecfe187f088d69954 --algorithm md5_
 
 Verified behavior: hashcat salted examples (modes 10 and 1410, plaintext `hashcat`) audit to MATCH with the example salt; a wrong salt gives an honest no_match; omitting `--salt` for a salted format fails before processing; the salt is stored in the history record.
 
+## Benchmark
+
+```text
+python -m password_audit benchmark --seconds 1
+```
+
+Verified behavior: prints per-algorithm candidates/second (e.g. SHA-256 near 800k/s in-process while NTLM via Passlib runs near 23k/s on the same machine) to guide budget choices. Results are informational only.
+
+## Pause / Resume (dashboard)
+
+Start a long brute-force job, click Pause, then Resume. Verified behavior: the job checkpoints its attempt count, refuses resume if the wordlist changed, and continues with contiguous attempt accounting.
+
+## Plaintext Withholding and Encryption
+
+- Tick off "Store the recovered plaintext" (or use `--no-store-plaintext`) to record matches without the plaintext (`plaintext_withheld` marker).
+- `--encrypt` (or the dashboard unlock) protects stored plaintexts with a passphrase; without unlocking, history shows `<encrypted>`.
+
+## Hashlist (Multi-Target)
+
+Create a hashlist with one target per line and audit all of them with one wordlist:
+
+```text
+md5:8743b52063cd84097a65d1633f5c74f5
+127e6fbfe24a750e72930c220a8e138275656b8e5d8f48a98c3c92df2caba935
+ntlm:b4b9b02e6f09a9bd760f388b67351e2b
+```
+
+```text
+python -m password_audit audit --hashlist PATH --mode dictionary --wordlist PATH
+```
+
+Verified behavior: bare 32-hex lines are rejected (MD5/NTLM/MD4 ambiguity needs the prefix); a candidate matching several targets counts once and marks all of them matched at that attempt; history stores one record per target plus the batch summary (also visible in JSON export).
+
+## Rules (Dictionary Mutations)
+
+```text
+python -m password_audit audit HASH --algorithm md5 --mode dictionary --wordlist PATH --rules append_digits_0_99
+```
+
+Verified behavior: a target found only via a mutated candidate (`hashcat1` from wordlist word `hashcat`) is reported with the mutated plaintext, attempts count the expanded stream, and the budget truncates the expansion exactly (`budget_exhausted` when the full expansion would exceed it).
+
 ## Brute-Force Mode
 
 Use a short synthetic test secret and a small charset/length range that includes it.

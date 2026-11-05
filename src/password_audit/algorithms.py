@@ -27,6 +27,12 @@ ALGORITHM_NAMES = (
     "sha256_salt_pass",
     "sha512_pass_salt",
     "sha512_salt_pass",
+    "sha512_224",
+    "sha512_256",
+    "ripemd160",
+    "bcrypt",
+    "sha512crypt",
+    "phpass",
 )
 
 # Digest length in hexadecimal characters per supported algorithm.
@@ -48,6 +54,9 @@ ALGORITHM_LENGTHS = {
     "sha256_salt_pass": 64,
     "sha512_pass_salt": 128,
     "sha512_salt_pass": 128,
+    "sha512_224": 56,
+    "sha512_256": 64,
+    "ripemd160": 40,
 }
 
 # Algorithms compatible with each hexadecimal digest length. Note that a
@@ -57,9 +66,9 @@ ALGORITHM_LENGTHS = {
 ALGORITHMS_BY_LENGTH = {
     16: ("lm",),
     32: ("md5", "ntlm", "md4"),
-    40: ("sha1",),
-    56: ("sha224",),
-    64: ("sha256",),
+    40: ("sha1", "ripemd160"),
+    56: ("sha224", "sha512_224"),
+    64: ("sha256", "sha512_256"),
     96: ("sha384",),
     128: ("sha512",),
 }
@@ -83,6 +92,22 @@ SALTED_ALGORITHMS = {
 def is_salted(algorithm: str) -> bool:
     """Return True when the algorithm needs a user-supplied salt."""
     return algorithm in SALTED_ALGORITHMS
+
+
+# Adaptive formats embed their salt and cost inside the hash string, so the
+# target itself is the full hash (not a bare digest) and verification is
+# order-of-magnitude slower. They are audited with verify-style comparison.
+ADAPTIVE_ALGORITHMS = {
+    "bcrypt": "$2",
+    "sha512crypt": "$6$",
+    "phpass": "$P$",
+}
+ADAPTIVE_PREFIXES = {prefix: name for name, prefix in ADAPTIVE_ALGORITHMS.items()}
+
+
+def is_adaptive(algorithm: str) -> bool:
+    """Return True when the algorithm verifies with a slow passlib handler."""
+    return algorithm in ADAPTIVE_ALGORITHMS
 
 
 class HashInputError(ValueError):
@@ -130,7 +155,18 @@ def assess_hash(value: str) -> HashAssessment:
 
     The assessment never claims that a shape uniquely proves an algorithm.
     A 32-hex value is always reported as ambiguous between MD5, NTLM, and MD4.
+    Adaptive formats (bcrypt, sha512crypt, phpass) are recognized by their
+    hash-string prefix; the full string is the target.
     """
+    trimmed_probe = value.strip() if isinstance(value, str) else ""
+    for prefix, adaptive_name in ADAPTIVE_PREFIXES.items():
+        if trimmed_probe.startswith(prefix):
+            return HashAssessment(
+                submitted=value,
+                normalized=trimmed_probe,
+                compatible_algorithms=(adaptive_name,),
+                ambiguous=False,
+            )
     normalized = normalize_hash(value)
     length = len(normalized)
     candidates = ALGORITHMS_BY_LENGTH.get(length, ())
@@ -174,6 +210,9 @@ def select_algorithm(value: str, algorithm: str | None) -> tuple[HashAssessment,
         raise HashInputError(
             f"Unsupported algorithm {algorithm!r}. Supported formats: {supported}."
         )
+    if is_adaptive(algorithm):
+        # The target is the full hash string; length checks do not apply.
+        return assessment, algorithm
     expected = ALGORITHM_LENGTHS[algorithm]
     if len(assessment.normalized) != expected:
         raise HashInputError(

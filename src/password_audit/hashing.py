@@ -24,6 +24,8 @@ _ALGORITHM_MAP = {
     "sha256": "sha256",
     "sha384": "sha384",
     "sha512": "sha512",
+    "sha512_224": "sha512_224",
+    "sha512_256": "sha512_256",
 }
 
 
@@ -59,14 +61,23 @@ def hash_candidate(candidate: str, algorithm: str, salt: str | None = None) -> s
         if salt is not None:
             raise ValueError(f"Algorithm {algorithm!r} does not take a salt.")
         return lm_hash(candidate)
+    if algorithm == "ripemd160":
+        if salt is not None:
+            raise ValueError(f"Algorithm {algorithm!r} does not take a salt.")
+        from .ripemd160 import ripemd160_hex
+
+        return ripemd160_hex(candidate.encode("utf-8"))
     raise ValueError(f"Unsupported algorithm: {algorithm!r}")
 
 
 # --- NTLM and LM -------------------------------------------------------
 
 try:  # pragma: no cover - exercised only on interpreters where Passlib works
+    from passlib.hash import bcrypt as _passlib_bcrypt
     from passlib.hash import lmhash as _passlib_lmhash
     from passlib.hash import nthash as _passlib_nthash
+    from passlib.hash import phpass as _passlib_phpass
+    from passlib.hash import sha512_crypt as _passlib_sha512crypt
 
     def ntlm_hash(candidate: str) -> str:
         """Return the NTLM digest (MD4 of UTF-16LE input) via Passlib."""
@@ -92,6 +103,15 @@ except Exception:  # pragma: no cover - fallback path for Python 3.13+
         raise ValueError(
             "LM hashing requires Passlib, which could not be imported on this "
             "interpreter. Use MD4/NTLM/SHA family formats instead."
+        )
+
+    _ADAPTIVE_HANDLERS = {}
+
+    def verify_candidate(candidate: str, algorithm: str, target: str, salt=None) -> bool:
+        """Adaptive verification requires Passlib; unavailable without it."""
+        raise ValueError(
+            "Adaptive formats require Passlib, which could not be imported on "
+            "this interpreter."
         )
 
 
@@ -139,3 +159,30 @@ def _h(x: int, y: int, z: int) -> int:
 
 def _rol(value: int, shift: int) -> int:
     return ((value << shift) | (value >> (32 - shift))) & 0xFFFFFFFF
+
+
+# --- Adaptive formats (bcrypt, sha512crypt, phpass) --------------------
+
+if "_ADAPTIVE_HANDLERS" not in globals():
+    _ADAPTIVE_HANDLERS = {
+        "bcrypt": _passlib_bcrypt,
+        "sha512crypt": _passlib_sha512crypt,
+        "phpass": _passlib_phpass,
+    }
+
+    def verify_candidate(candidate: str, algorithm: str, target: str, salt: str | None = None) -> bool:
+        """Return True when ``candidate`` verifies against ``target``.
+
+        Unsalted and salted fast formats compare digests; adaptive formats
+        delegate to the Passlib handler's verify (its embedded salt and cost
+        are taken from the stored hash string).
+        """
+        if algorithm in _ADAPTIVE_HANDLERS:
+            if salt is not None:
+                raise ValueError(f"Algorithm {algorithm!r} does not take a salt.")
+            handler = _ADAPTIVE_HANDLERS[algorithm]
+            try:
+                return bool(handler.verify(candidate, target))
+            except (ValueError, TypeError):
+                return False
+        return hash_candidate(candidate, algorithm, salt) == target

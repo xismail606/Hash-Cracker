@@ -10,7 +10,9 @@ credential-policy reporting; operators are warned before a run begins.
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
+import secrets
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -33,11 +35,27 @@ CREATE TABLE IF NOT EXISTS audit_runs (
     matched_plaintext TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_audit_runs_started ON audit_runs (started_at);
+CREATE TABLE IF NOT EXISTS history_meta (
+    key  TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS audit_batches (
+    batch_id     TEXT PRIMARY KEY,
+    mode         TEXT NOT NULL,
+    status       TEXT NOT NULL,
+    attempts     INTEGER NOT NULL,
+    elapsed_ms   INTEGER NOT NULL,
+    worker_count INTEGER NOT NULL,
+    started_at   TEXT NOT NULL,
+    target_count INTEGER NOT NULL
+);
 """
 
 # Columns added after v1; applied additively on connect for existing databases.
 MIGRATION_COLUMNS = (
     ("salt", "TEXT"),
+    ("batch_id", "TEXT"),
+    ("plaintext_withheld", "INTEGER"),
 )
 
 EXPORT_COLUMNS = (
@@ -53,6 +71,8 @@ EXPORT_COLUMNS = (
     "worker_count",
     "matched_plaintext",
     "salt",
+    "batch_id",
+    "plaintext_withheld",
 )
 
 
@@ -76,6 +96,8 @@ class AuditRecord:
     worker_count: int
     matched_plaintext: str | None
     salt: str | None = None
+    batch_id: str | None = None
+    plaintext_withheld: bool = False
 
     def as_dict(self) -> dict:
         return {
@@ -91,6 +113,8 @@ class AuditRecord:
             "worker_count": self.worker_count,
             "matched_plaintext": self.matched_plaintext,
             "salt": self.salt,
+            "batch_id": self.batch_id,
+            "plaintext_withheld": bool(self.plaintext_withheld),
         }
 
 
@@ -133,6 +157,9 @@ def record_run(
     completed_at: str | None = None,
     matched_plaintext: str | None = None,
     salt: str | None = None,
+    batch_id: str | None = None,
+    plaintext_withheld: bool = False,
+    plaintext_key: bytes | None = None,
 ) -> int:
     """Persist one audit run; return the new run ID.
 
@@ -142,13 +169,16 @@ def record_run(
     """
     if completed_at is None:
         completed_at = utc_now()
+    if plaintext_key is not None and matched_plaintext is not None:
+        matched_plaintext = encrypt_stored(conn, plaintext_key, matched_plaintext)
     try:
         cursor = conn.execute(
             """
             INSERT INTO audit_runs (
                 started_at, completed_at, target_hash, algorithm, mode,
-                status, attempts, elapsed_ms, worker_count, matched_plaintext, salt
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                status, attempts, elapsed_ms, worker_count, matched_plaintext,
+                salt, batch_id, plaintext_withheld
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 started_at,
@@ -162,6 +192,8 @@ def record_run(
                 worker_count,
                 matched_plaintext,
                 salt,
+                batch_id,
+                1 if plaintext_withheld else 0,
             ),
         )
         conn.commit()
@@ -174,7 +206,7 @@ def list_runs(conn: sqlite3.Connection, limit: int | None = None) -> list[AuditR
     """Return local audit records, newest first."""
     query = (
         "SELECT run_id, started_at, completed_at, target_hash, algorithm, mode, "
-        "status, attempts, elapsed_ms, worker_count, matched_plaintext, salt "
+        "status, attempts, elapsed_ms, worker_count, matched_plaintext, salt, batch_id, plaintext_withheld "
         "FROM audit_runs ORDER BY run_id DESC"
     )
     params: tuple = ()
@@ -200,6 +232,135 @@ def clear_runs(conn: sqlite3.Connection) -> int:
         return int(cursor.rowcount or 0)
     except sqlite3.Error as exc:
         raise HistoryError(f"Cannot clear local audit history: {exc}") from exc
+
+
+def record_batch(
+    conn: sqlite3.Connection,
+    *,
+    batch_id: str,
+    mode: str,
+    status: str,
+    attempts: int,
+    elapsed_ms: int,
+    worker_count: int,
+    started_at: str,
+    target_count: int,
+) -> None:
+    """Persist one hashlist run summary; per-target rows live in audit_runs."""
+    try:
+        conn.execute(
+            """
+            INSERT INTO audit_batches (
+                batch_id, mode, status, attempts, elapsed_ms,
+                worker_count, started_at, target_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (batch_id, mode, status, attempts, elapsed_ms, worker_count,
+             started_at, target_count),
+        )
+        conn.commit()
+    except sqlite3.Error as exc:
+        raise HistoryError(f"Cannot write the batch record to local history: {exc}") from exc
+
+
+def export_batches(conn: sqlite3.Connection) -> list[dict]:
+    """Return hashlist run summaries for report export."""
+    try:
+        rows = conn.execute(
+            "SELECT batch_id, mode, status, attempts, elapsed_ms, worker_count, "
+            "started_at, target_count FROM audit_batches ORDER BY started_at DESC"
+        ).fetchall()
+    except sqlite3.Error as exc:
+        raise HistoryError(f"Cannot read batch records: {exc}") from exc
+    keys = ("batch_id", "mode", "status", "attempts", "elapsed_ms", "worker_count",
+            "started_at", "target_count")
+    return [dict(zip(keys, row)) for row in rows]
+
+
+ENCRYPT_PREFIX = "enc1:"
+_ENCRYPT_VERIFY_KEY = "enc_verify"
+_ENCRYPT_SALT_KEY = "enc_salt"
+
+
+def _fernet(key_bytes: bytes):
+    """Return a Fernet instance; raises HistoryError if cryptography is missing."""
+    try:
+        from cryptography.fernet import Fernet
+    except ImportError as exc:
+        raise HistoryError(
+            "Plaintext encryption requires the optional 'cryptography' package. "
+            "Install it with: python -m pip install password-audit[encrypt]"
+        ) from exc
+    import base64
+
+    return Fernet(base64.urlsafe_b64encode(key_bytes))
+
+
+def ensure_encryption_salt(conn: sqlite3.Connection) -> bytes:
+    """Return (creating if needed) the per-database scrypt salt."""
+    row = conn.execute(
+        "SELECT value FROM history_meta WHERE key = ?", (_ENCRYPT_SALT_KEY,)
+    ).fetchone()
+    if row:
+        return bytes.fromhex(row[0])
+    salt = sqlite3.Binary(secrets.token_bytes(16))
+    conn.execute(
+        "INSERT OR REPLACE INTO history_meta (key, value) VALUES (?, ?)",
+        (_ENCRYPT_SALT_KEY, bytes(salt).hex()),
+    )
+    conn.commit()
+    return bytes(salt)
+
+
+def derive_key(passphrase: str, salt: bytes) -> bytes:
+    """Derive a 32-byte Fernet key from a passphrase with scrypt."""
+    return hashlib.scrypt(
+        passphrase.encode("utf-8"), salt=salt, n=2**14, r=8, p=1, dklen=32
+    )
+
+
+def init_encryption(conn: sqlite3.Connection, passphrase: str) -> bytes:
+    """Create or verify the encryption setup; return the derived key.
+
+    The first call stores a random salt plus an encrypted verification token;
+    later calls verify the passphrase against that token.
+    """
+    salt = ensure_encryption_salt(conn)
+    key = derive_key(passphrase, salt)
+    fernet = _fernet(key)
+    row = conn.execute(
+        "SELECT value FROM history_meta WHERE key = ?", (_ENCRYPT_VERIFY_KEY,)
+    ).fetchone()
+    if row is None:
+        token = fernet.encrypt(b"ok").decode()
+        conn.execute(
+            "INSERT OR REPLACE INTO history_meta (key, value) VALUES (?, ?)",
+            (_ENCRYPT_VERIFY_KEY, token),
+        )
+        conn.commit()
+    else:
+        try:
+            if fernet.decrypt(row[0].encode()) != b"ok":
+                raise HistoryError("Wrong passphrase.")
+        except HistoryError:
+            raise
+        except Exception as exc:
+            raise HistoryError("Wrong passphrase.") from exc
+    return key
+
+
+def encrypt_stored(conn: sqlite3.Connection, key: bytes, plaintext: str) -> str:
+    """Encrypt a plaintext for storage; returns a prefixed ciphertext."""
+    return ENCRYPT_PREFIX + _fernet(key).encrypt(plaintext.encode("utf-8")).decode()
+
+
+def decrypt_stored(key: bytes, stored: str) -> str:
+    """Decrypt a stored ciphertext; returns the plaintext."""
+    return _fernet(key).decrypt(stored[len(ENCRYPT_PREFIX):].encode()).decode("utf-8")
+
+
+def is_encrypted_value(value: str | None) -> bool:
+    return bool(value) and value.startswith(ENCRYPT_PREFIX)
 
 
 def export_rows(conn: sqlite3.Connection) -> list[dict]:

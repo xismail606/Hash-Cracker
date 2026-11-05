@@ -22,6 +22,28 @@ python -m password_audit serve [--port PORT]
 - Reject malformed or unsupported shapes with a clear message.
 - Do not start candidate processing.
 
+### Hashlist (Multi-Target)
+
+- `--hashlist PATH` audits many targets in one candidate pass (mutually
+  exclusive with a positional HASH). Lines carry an explicit
+  `algorithm:hash` prefix (e.g. `md5:8743b520…`) or a bare hash whose shape
+  resolves to exactly one supported format; bare 32-hex lines are rejected
+  because MD5/NTLM/MD4 cannot be proven by shape. Blank lines and `#`
+  comments are skipped; the whole file is validated before processing.
+- Salted formats are not supported in hashlists (no per-target salt).
+- The run reports a per-target result table; history stores one record per
+  target plus a batch summary under a shared batch ID.
+
+### Rules (Dictionary Mutations)
+
+- `--rules PRESET` expands dictionary candidates with deterministic
+  mutations. Presets: `capitalize`, `upper`, `lower`, `leetspeak`,
+  `append_digits_0_99`, `append_years`, `all` (default: `none`).
+- The candidate budget governs the expanded stream; a truncated expansion
+  reports `budget_exhausted`. Original words are attempted first, then their
+  variants; matches found via a mutated candidate report the mutated
+  plaintext.
+
 ### Salted Formats
 
 - Eight salted fast-hash formats are supported with an operator-supplied salt:
@@ -79,6 +101,29 @@ python -m password_audit serve [--port PORT]
 - Serves the built Astro frontend and Flask API on `127.0.0.1` only.
 - Prints the local URL and never accepts a host/bind-address override.
 - Defaults to port 8765; `--port` may choose another available local port.
+
+## Benchmark
+
+- `benchmark [--seconds S] [--algorithms a,b]` measures per-algorithm
+  in-process hashing throughput (candidates/second) on this machine to help
+  pick realistic brute-force budgets. Results are informational and are not
+  stored in history.
+
+## Pause / Resume (dashboard)
+
+- Dashboard jobs can pause (`POST /api/audits/{id}/pause`) and resume
+  (`POST /api/audits/{id}/resume`) with exact attempt accounting; pause is
+  refused for rule-expanded and hashlist runs. Resuming a dictionary run
+  verifies the uploaded wordlist is unchanged.
+
+## Plaintext Handling
+
+- `--no-store-plaintext` (CLI) and the dashboard checkbox record the match
+  metadata without the recovered plaintext (`plaintext_withheld` marker).
+- `--encrypt` (CLI) encrypts stored plaintexts with a passphrase-derived key
+  (scrypt + Fernet); `history --unlock` decrypts them for display, and the
+  dashboard offers the same unlock. Losing the passphrase makes stored
+  plaintext unrecoverable. Requires the optional `encrypt` extra.
 
 ## Exit Status
 

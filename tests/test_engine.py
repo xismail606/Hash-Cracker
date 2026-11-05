@@ -151,3 +151,45 @@ class TestCancellation:
         )
         assert result.status == STATUS_CANCELLED
         assert 0 < result.attempts < 10_000_000
+
+
+class TestHashlistAudit:
+    def test_multi_target_single_pass(self):
+        from password_audit.engine import run_hashlist_audit
+
+        targets = [
+            {"id": 0, "algorithm": "md5", "hash": hashlib.md5(b"hashcat").hexdigest()},
+            {"id": 1, "algorithm": "sha256", "hash": hashlib.sha256(b"hashcat").hexdigest()},
+            {"id": 2, "algorithm": "ntlm", "hash": "b4b9b02e6f09a9bd760f388b67351e2b"},
+        ]
+        source = iter([["hashcat"], ["unrelated"]])
+        result = run_hashlist_audit(targets, source, workers=2)
+        assert result.status == STATUS_MATCH
+        assert result.attempts == 1  # one candidate matched all three targets
+        statuses = {t["id"]: t for t in result.targets}
+        assert all(statuses[i]["status"] == STATUS_MATCH for i in (0, 1, 2))
+        assert statuses[0]["matched_plaintext"] == "hashcat"
+        assert statuses[0]["match_at_attempt"] == 1
+
+    def test_partial_match_exhaustion(self):
+        from password_audit.engine import STATUS_NO_MATCH, run_hashlist_audit
+
+        targets = [
+            {"id": 0, "algorithm": "md5", "hash": hashlib.md5(b"hashcat").hexdigest()},
+            {"id": 1, "algorithm": "sha256", "hash": hashlib.sha256(b"absent").hexdigest()},
+        ]
+        source = iter([["hashcat"]])
+        result = run_hashlist_audit(targets, source, workers=2)
+        assert result.status == STATUS_MATCH  # run-level: at least one match
+        by_id = {t["id"]: t for t in result.targets}
+        assert by_id[0]["status"] == STATUS_MATCH
+        assert by_id[1]["status"] == STATUS_NO_MATCH
+
+    def test_all_miss_reports_no_match(self):
+        from password_audit.engine import STATUS_NO_MATCH, run_hashlist_audit
+
+        targets = [{"id": 0, "algorithm": "md5", "hash": hashlib.md5(b"absent").hexdigest()}]
+        result = run_hashlist_audit(targets, iter([["one", "two"]]), workers=1)
+        assert result.status == STATUS_NO_MATCH
+        assert result.attempts == 2
+        assert result.targets[0]["status"] == STATUS_NO_MATCH

@@ -19,6 +19,12 @@ dependencies = [
 dev = [
     "pytest>=8.0",
 ]
+encrypt = [
+    "cryptography>=42",
+]
+adaptive = [
+    "bcrypt>=3.2,<4.1",
+]
 
 [project.scripts]
 password-audit = "password_audit.cli:main"
