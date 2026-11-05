@@ -1,0 +1,129 @@
+# ==========================================
+# Python
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Python Distribution / Packaging
+build/
+dist/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# ==========================================
+# Node.js & Frontend (Astro / React)
+# ==========================================
+node_modules/
+.astro/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Frontend Build Output
+frontend/dist/
+src/password_audit/static/*
+!src/password_audit/static/.gitkeep
+
+# ==========================================
+# Database & SQLite (Local Audit History)
+# ==========================================
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# ==========================================
+# Temporary Files & Wordlist Uploads
+# ==========================================
+tmp/
+temp/
+uploads/
+*.tmp
+
+# ==========================================
+# Environment Variables & Secrets
+# ==========================================
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*
+!.env.example
+
+# ==========================================
+# Operating System
+# ==========================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ==========================================
+# IDEs & Code Editors
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ==========================================
+# AI Agents & Local Assistants
+# ==========================================
+.specify/
+skills-lock.json
+.agents/
+.claude/
+.gemini/
+.antigravity/
+.cursor/
+.codex/
+.warp/
+.zed/
+.opencode/
+.openclaw/
+.specs/
+specs/
