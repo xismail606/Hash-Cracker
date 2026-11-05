@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "password-audit"
+version = "0.1.0"
+description = "Offline hash identification and password auditing tool with a CLI and local web dashboard"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE.md" }
+authors = [{ name = "Hash Cracker project" }]
+dependencies = [
+    "Flask>=3.0",
+    "passlib>=1.7.4",
+]
+
+[project.optional-dependencies]
+frontend = [
+    # Node/npm are used to build the Astro dashboard; this marker documents
+    # that the frontend toolchain is a build-time dependency only.
+]
+
+[project.scripts]
+password-audit = "password_audit.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+password_audit = ["static/**/*"]

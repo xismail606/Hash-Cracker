@@ -11,7 +11,7 @@
 
 A planned Python-based offline hash-cracking and password-auditing project. It identifies supported hash formats, compares a target against either a supplied dictionary or a bounded brute-force search, provides both a CLI and local web dashboard, and stores audit results in SQLite.
 
-> **Project status: Planning.** The specification, design documents, and task plan are ready. The Python application and web frontend have not been implemented. Commands and file paths in this README describe the intended design and are not runnable yet.
+> **Project status: Implemented.** All four planned phases (33 tasks) are complete: hash identification, dictionary and bounded brute-force auditing, CLI and web dashboard, multiprocessing, and SQLite history. See the [quickstart](specs/001-offline-password-audit/quickstart.md) for setup and validated scenarios.
 
 ## Project Overview
 
@@ -24,13 +24,19 @@ Both interfaces will call the same Python audit engine. The engine will support:
 
 ## Supported Hashes
 
-| Algorithm | Format                    | v1 support |
-| --------- | ------------------------- | ---------- |
-| MD5       | 32 hexadecimal characters | Yes        |
-| NTLM      | 32 hexadecimal characters | Yes        |
-| SHA-256   | 64 hexadecimal characters | Yes        |
+| Algorithm | Format                     | Support    |
+| --------- | -------------------------- | ---------- |
+| LM        | 16 hexadecimal characters  | Yes        |
+| MD5       | 32 hexadecimal characters  | Yes        |
+| NTLM      | 32 hexadecimal characters  | Yes        |
+| MD4       | 32 hexadecimal characters  | Yes        |
+| SHA-1     | 40 hexadecimal characters  | Yes        |
+| SHA-224   | 56 hexadecimal characters  | Yes        |
+| SHA-256   | 64 hexadecimal characters  | Yes        |
+| SHA-384   | 96 hexadecimal characters  | Yes        |
+| SHA-512   | 128 hexadecimal characters | Yes        |
 
-Hash length and character structure help identify a format, but do not always prove the algorithm. MD5 and NTLM have the same 32-character hexadecimal shape. The tool must report both and require an explicit selection. NTLM candidate calculation uses Passlib's `nthash`; MD5 and SHA-256 use Python's `hashlib`.
+Hash length and character structure help identify a format, but do not always prove the algorithm. MD5, NTLM, and MD4 share the same 32-character hexadecimal shape. The tool reports all three and requires an explicit selection. NTLM uses Passlib's `nthash`; LM uses Passlib's `lmhash` and compares only the first 8-byte DES block (16 hex), matching the format hashcat uses — a 16-hex LM target identifies passwords by their first seven characters. MD5, SHA-1, SHA-224, SHA-256, SHA-384, and SHA-512 use Python's `hashlib`; MD4 reuses the pure-Python MD4 implementation from the NTLM fallback (validated against RFC 1320 test vectors). Salted formats (`md5($pass.$salt)`, `sha256($salt.$pass)`, …) and adaptive formats (bcrypt, sha512crypt, phpass) are not supported in v1 — they need a salt input and different engine work.
 
 ## Features in Scope
 
@@ -91,7 +97,7 @@ flowchart LR
     CORE --> DB[(Local SQLite history)]
 ```
 
-## Planned Interfaces
+## Interfaces
 
 ### CLI
 
@@ -110,17 +116,20 @@ The exact command contract is in [contracts/cli.md](specs/001-offline-password-a
 
 ### Local Web Dashboard
 
-`python -m password_audit serve` is planned to serve the Astro build and Flask API on `127.0.0.1`, default port `8765`. The dashboard will support algorithm selection, both candidate modes, progress monitoring, cancellation, recovered result display, and history review. It allows one active web audit at a time.
+`python -m password_audit serve` serves the Astro build and Flask API together on `127.0.0.1`, default port `8765`. The dashboard offers algorithm selection, both candidate modes, progress monitoring, cancellation, recovered result display, and history review. It allows one active web audit at a time.
 
-Planned JSON routes:
+> **Always open the dashboard through the Flask server** — the JSON API exists only there. The built page opened through any other server shows a "Flask backend not detected" banner instead of failing silently. For frontend development, start the Flask server first so `npm run dev`/`npm run preview` can proxy `/api` to port 8765.
+
+JSON routes:
 
 - `POST /api/identify` — assess a hash and return compatible algorithms.
 - `POST /api/audits` — start a dictionary or brute-force audit.
 - `GET /api/audits/{job_id}` — retrieve progress and result.
 - `POST /api/audits/{job_id}/cancel` — cancel the active job.
 - `GET /api/history` — list local audit records.
+- `POST /api/history/clear` — permanently delete all local audit records (CSRF-protected; the dashboard asks for confirmation first).
 
-See the [web contract](specs/001-offline-password-audit/contracts/web.md). These commands and routes have not been implemented.
+See the [web contract](specs/001-offline-password-audit/contracts/web.md) for the full JSON API contract.
 
 ## Implementation Plan: Four Required Phases
 
@@ -179,7 +188,9 @@ The work is organized into the four phases in the supplied student project guide
 | T032 | Document records, database location, exports, and retention warning.                        |
 | T033 | Walk through the phase validation scenarios with synthetic data and refine the quickstart.  |
 
-## Planned Repository Layout
+## Repository Layout (implemented)
+
+
 
 ```text
 README.md
@@ -216,13 +227,13 @@ specs/001-offline-password-audit/
     └── web.md
 ```
 
-This is the planned layout; application files do not exist until their tasks are implemented.
+This layout is implemented; `static/` holds the Astro build output (gitignored) and is created by `npm run build`.
 
-## Planned Setup
+## Setup
 
-Requirements: Python 3.11+, Node.js/npm compatible with Astro, and a modern browser. Internet access may be required to install dependencies, but audit operations are designed to run offline.
+Requirements: Python 3.11+, Node.js/npm compatible with Astro, and a modern browser. Internet access may be required to install dependencies, but audit operations are designed to run offline. The application runs on **Windows, Linux, and macOS**.
 
-Expected Windows PowerShell setup after implementation:
+### Windows (PowerShell)
 
 ```powershell
 python -m venv .venv
@@ -234,7 +245,19 @@ npm run build
 Set-Location ..
 ```
 
-The application commands above are planned examples and will be finalized during implementation.
+Shortcut: `.\serve.ps1` starts the dashboard on the venv's interpreter without activating it (`.\serve.ps1 -Port 9000` chooses a port).
+
+### Linux / macOS (bash)
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+cd frontend && npm install && npm run build && cd ..
+```
+
+Shortcut: `./serve.sh` starts the dashboard on the venv's interpreter without activating it (`./serve.sh 9000` chooses a port).
+
+After setup, `python -m password_audit identify ...`, `audit ...`, `history`, `export ...`, and `serve` are available (the installed `password-audit` console script works the same way on every platform); see the CLI contract for options and exit codes. The only platform differences are venv paths (`Scripts\` on Windows, `bin/` elsewhere) and the `python` vs `python3` command name.
 
 ## Performance and Validation
 
@@ -242,10 +265,10 @@ The performance target is to compare 100,000 short dictionary entries in under 6
 
 ## Current Status
 
-- The project brief has been translated into a specification, technical design, contracts, and a four-phase task plan.
-- The four phases contain 33 tasks.
-- Application code and the frontend have not been implemented.
-- No implementation tests or performance measurements have been run.
+- The specification, design documents, contracts, and four-phase task plan are complete; all 33 tasks are implemented and marked done in [tasks.md](specs/001-offline-password-audit/tasks.md).
+- The Python package (`src/password_audit/`) provides hash identification, dictionary/brute-force auditing, multiprocessing, the CLI, the Flask API, and SQLite history.
+- The Astro/React/Tailwind dashboard builds into `src/password_audit/static/` and is served by the loopback Flask server.
+- The performance target (100,000 dictionary entries in under 60 seconds) and other numbers come from manual synthetic-data validation, not an automated test suite; no formal tests are included.
 
 ## License
 

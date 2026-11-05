@@ -1,0 +1,57 @@
+---
+import "../styles/global.css";
+import Navbar from "../components/Navbar.jsx";
+import Footer from "../components/Footer.jsx";
+import AuditDashboard from "../components/AuditDashboard.jsx";
+import ParticleBackground from "../components/ParticleBackground.jsx";
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hash Cracker — Offline Password Audit</title>
+    <meta
+      name="description"
+      content="Local, offline password-hash auditing with dictionary and bounded brute-force modes, live progress, and SQLite history."
+    />
+    <meta name="theme-color" content="#030303" id="meta-theme-color" />
+    <!-- Theme init before paint to prevent FOUC (same approach as CyberSec Arsenal) -->
+    <script is:inline>
+      (function () {
+        const storedTheme = localStorage.getItem("theme");
+        const isDark =
+          storedTheme === "dark" ||
+          (!storedTheme && !window.matchMedia("(prefers-color-scheme: light)").matches);
+        document.documentElement.setAttribute("data-theme", isDark ? "dark" : "light");
+        const metaTheme = document.getElementById("meta-theme-color");
+        if (metaTheme) metaTheme.setAttribute("content", isDark ? "#030303" : "#f5f1ea");
+      })();
+    </script>
+  </head>
+  <body class="bg-bg text-text">
+    <ParticleBackground client:load />
+    <Navbar client:load />
+    <main class="mx-auto max-w-5xl px-4 pb-16 pt-28 sm:px-6">
+      <header class="mb-10">
+        <div
+          class="mb-4 inline-flex items-center gap-1.5 rounded border border-border bg-surface px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-accent mono"
+        >
+          <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-accent"></span>
+          Local · Offline · Loopback only
+        </div>
+        <h1 class="hero-title">Hash Cracker</h1>
+        <p class="mt-4 max-w-2xl text-sm leading-relaxed text-text-muted sm:text-base">
+          Audit password hashes you control on this machine: dictionary or
+          bounded brute-force comparison against MD5, SHA-256, and NTLM, run by
+          a multiprocessing engine and recorded in local SQLite history. The
+          server binds to <span class="mono text-text">127.0.0.1</span> and
+          never sends hashes, candidates, or results over the network.
+        </p>
+      </header>
+      <AuditDashboard client:load />
+    </main>
+    <Footer client:load />
+  </body>
+</html>

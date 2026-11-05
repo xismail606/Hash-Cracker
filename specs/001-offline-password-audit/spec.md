@@ -16,7 +16,7 @@ An authorized auditor submits a hash and sees the supported algorithms whose for
 
 **Why this priority**: The selected algorithm determines how every candidate is encoded and hashed; a mistaken automatic guess would invalidate the audit result.
 
-**Independent Test**: Submit synthetic MD5, SHA-256, and NTLM hashes plus malformed values; verify that SHA-256 is recognized by shape and that 32-character hexadecimal values are reported as ambiguous between MD5 and NTLM.
+**Independent Test**: Submit synthetic MD5, SHA-256, and NTLM hashes plus malformed values; verify that SHA-256 is recognized by shape and that 32-character hexadecimal values are reported as ambiguous between MD5, NTLM, and MD4.
 
 **Acceptance Scenarios**:
 
@@ -76,7 +76,7 @@ An auditor reviews previous runs and exports local reports containing successful
 
 ## Edge Cases
 
-- MD5 and NTLM digests both use 32 hexadecimal characters; structure alone cannot distinguish them.
+- MD5, NTLM, and MD4 digests all use 32 hexadecimal characters; structure alone cannot distinguish them.
 - SHA-256 digests use 64 hexadecimal characters; malformed lengths and non-hex characters are rejected.
 - Uppercase hexadecimal input is normalized for comparisons while the submitted representation can be retained in the audit record.
 - Dictionary files with blank lines, duplicate entries, invalid UTF-8, or a final line without a newline are handled consistently and documented.
@@ -96,7 +96,7 @@ An auditor reviews previous runs and exports local reports containing successful
 - **FR-003**: The system MUST support explicit algorithm selection when a hash shape is ambiguous, including the MD5/NTLM 32-hex overlap.
 - **FR-004**: Dictionary mode MUST compare the target against entries from a finite local wordlist supplied by the operator.
 - **FR-005**: Brute-force mode MUST generate candidates only from a user-selected character set and configured minimum/maximum length, and MUST stop at a configured candidate budget.
-- **FR-006**: The initial supported algorithms MUST include MD5, SHA-256, and NTLM. The system MUST clearly reject formats outside this set.
+- **FR-006**: The initial supported algorithms MUST include MD5, SHA-256, and NTLM. The system MUST clearly reject formats outside the supported set. (Extended post-v1 at the operator's request: SHA-1, SHA-224, SHA-384, SHA-512, MD4, and LM — all unsalted, single-pass formats; salted and adaptive formats remain out of scope.)
 - **FR-007**: The system MUST use bounded multiprocessing for candidate comparison, allow a worker limit from 1 through 8, and report effective workers, attempts, progress, and elapsed time.
 - **FR-008**: The system MUST provide a CLI for hash, algorithm, mode, wordlist or brute-force options, worker count, and history/report operations.
 - **FR-009**: The system MUST provide a local web dashboard for hash input, mode selection, progress monitoring, and result display.
@@ -118,7 +118,7 @@ An auditor reviews previous runs and exports local reports containing successful
 
 ### Measurable Outcomes
 
-- **SC-001**: MD5, SHA-256, and NTLM test values are classified as compatible formats; 32-character hexadecimal values are always shown as ambiguous between MD5 and NTLM until explicitly selected.
+- **SC-001**: Supported hash test values (MD5, SHA-256, NTLM, and the extended set: SHA-1, SHA-224, SHA-384, SHA-512, MD4, LM) are classified as compatible formats; 32-character hexadecimal values are always shown as ambiguous between MD5, NTLM, and MD4 until explicitly selected.
 - **SC-002**: Dictionary mode correctly identifies a known matching entry and reports exact attempts and elapsed time on a synthetic wordlist of 100,000 entries.
 - **SC-003**: Brute-force mode finds a synthetic test secret when its charset and length are included, and never evaluates more candidates than the configured budget.
 - **SC-004**: Both interfaces expose the same algorithm selection, audit modes, worker limits, and terminal result states.

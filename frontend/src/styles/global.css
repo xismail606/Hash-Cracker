@@ -1,0 +1,363 @@
+@import "tailwindcss";
+
+/* Design system adopted from the CyberSec Arsenal site (D:\Methodology -react):
+   dark-first emerald-on-deep-black with a glowing top radial gradient, Geist
+   Sans/Mono, rounded translucent cards, glow accent buttons, light theme
+   override. Fonts are self-hosted (public/fonts) — the dashboard makes no
+   external requests at runtime. */
+
+@font-face {
+  font-family: "Geist Sans";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/geist-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/geist-mono-latin.woff2") format("woff2");
+}
+
+/* Default/Dark theme: Green & deep black with glowing top radial gradient */
+:root {
+  --bg: #030303;
+  --bg-gradient: radial-gradient(circle at 50% 0%, #071e13 0%, #030303 75%);
+  --surface: #0a0c0b;
+  --surface-raised: #121413;
+  --border: rgba(16, 185, 129, 0.08);
+
+  --text: #eafcf1;
+  --text-muted: #809689;
+
+  --accent: #10b981;
+  --success: #10b981;
+  --warning: #f5b942;
+  --danger: #f1584b;
+
+  --glow-opacity: 0;
+}
+
+/* Explicit Light Mode Override: Warm beige & cream theme */
+html[data-theme="light"] {
+  --bg: #f5f1ea;
+  --bg-gradient: linear-gradient(180deg, #faf7f2 0%, #ede7dc 100%);
+  --surface: #ffffff;
+  --surface-raised: #eae4d8;
+  --border: rgba(120, 100, 80, 0.12);
+
+  --text: #1c1917;
+  --text-muted: #78716c;
+
+  --accent: #059669;
+  --success: #059669;
+  --warning: #d97706;
+  --danger: #dc2626;
+}
+
+/* Tailwind v4 theme bindings (same names as the CyberSec site) */
+@theme {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+
+  --font-sans: "Geist Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-gradient);
+  background-attachment: fixed;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+/* Gradient display title, as on the CyberSec hero. */
+.hero-title {
+  font-size: clamp(2.3rem, 5vw, 3.8rem);
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+  background: linear-gradient(135deg, #ffffff 0%, var(--accent) 60%, #054026 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+html[data-theme="light"] .hero-title {
+  background: linear-gradient(135deg, #24201c 0%, var(--accent) 70%, #05301f 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+/* Cards: translucent rounded panels that light up on hover. */
+.card {
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  backdrop-filter: blur(8px);
+  transition: border-color 0.3s ease;
+}
+.card:hover {
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.card-header {
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-raised) 30%, transparent);
+  border-radius: 20px 20px 0 0;
+}
+
+/* Buttons: primary glows and lifts, secondary lightens. */
+.btn-primary {
+  background: var(--accent);
+  color: #ffffff;
+  border-radius: 12px;
+  font-weight: 700;
+  box-shadow: 0 10px 25px -5px color-mix(in srgb, var(--accent) 35%, transparent);
+  transition: all 0.2s ease;
+}
+.btn-primary:hover:not(:disabled) {
+  box-shadow: 0 15px 30px -5px color-mix(in srgb, var(--accent) 45%, transparent);
+  transform: translateY(-2px);
+}
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.btn-secondary {
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  color: var(--text);
+  border-radius: 12px;
+  font-weight: 700;
+  transition: all 0.2s ease;
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--surface-raised);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  color: var(--accent);
+  transform: translateY(-2px);
+}
+.btn-secondary:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Inputs */
+.input {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-raised) 60%, transparent);
+  color: var(--text);
+  border-radius: 12px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.input::placeholder {
+  color: color-mix(in srgb, var(--text-muted) 70%, transparent);
+}
+.input:hover {
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.section-label {
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.focus-accent:focus-visible {
+  outline: none;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent) !important;
+}
+
+/* Terminal cursor for the hash input caret feel. */
+.terminal-cursor {
+  background: var(--accent);
+}
+
+/* Status pills */
+.pill {
+  display: inline-block;
+  border-width: 1px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+/* Floating capsule navbar (adapted from the CyberSec navbar). */
+.nav-capsule {
+  position: fixed;
+  top: 16px;
+  left: 0;
+  right: 0;
+  max-width: 1200px;
+  margin: 0 auto;
+  z-index: 50;
+  padding: 0 16px;
+  transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.nav-capsule--hidden {
+  transform: translateY(-120%);
+  opacity: 0;
+}
+.nav-capsule-inner {
+  width: 100%;
+  padding: 0 8px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.nav-logo-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+  border-radius: 50px;
+  padding: 5px 16px 5px 5px;
+  backdrop-filter: blur(10px);
+  text-decoration: none;
+  transition: border-color 0.3s ease, background 0.3s ease;
+  cursor: pointer;
+}
+.nav-logo-pill:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.nav-pill {
+  display: flex;
+  align-items: center;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+  border-radius: 50px;
+  padding: 5px;
+  gap: 4px;
+  backdrop-filter: blur(10px);
+}
+.pill-link {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 8px 12px;
+  border-radius: 50px;
+  transition: color 0.2s, background 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.pill-link:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.pill-cta {
+  background: transparent;
+  color: var(--text-muted);
+  padding: 7px;
+  height: 34px;
+  width: 34px;
+  border-radius: 50%;
+  border: none;
+  transition: color 0.2s, background 0.2s, transform 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.pill-cta:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* Modal entrance (same curve as the CyberSec modals). */
+@keyframes modalEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-modal-enter {
+  animation: modalEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: #ffffff;
+  border-radius: 12px;
+  font-weight: 700;
+  box-shadow: 0 10px 25px -5px color-mix(in srgb, var(--danger) 35%, transparent);
+  transition: all 0.2s ease;
+}
+.btn-danger:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+.btn-danger:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-modal-enter {
+    animation: none;
+  }
+  .btn-danger:hover:not(:disabled) {
+    transform: none;
+  }
+}
+
+/* Smooth in-page anchor scrolling under the fixed navbar. */
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 90px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-primary:hover:not(:disabled),
+  .btn-secondary:hover:not(:disabled) {
+    transform: none;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+  .nav-capsule {
+    transition: none;
+  }
+}

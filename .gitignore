@@ -126,3 +126,6 @@ skills-lock.json
 .opencode/
 .openclaw/
 .specs/
+# Design skill scratch (screenshots, deal history, browser profiles)
+shots/
+.taste-skill/
