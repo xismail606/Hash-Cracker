@@ -413,6 +413,11 @@ def run_hashlist_audit(
                         matched_plaintext.setdefault(target_id, plaintext)
                         matched_attempt.setdefault(target_id, offset + match_index + 1)
                     if len(matched_plaintext) == unmatched_count:
+                        # A later batch may have completed first and advanced
+                        # attempts beyond the final match. Once every target
+                        # is found, report the last required candidate, as in
+                        # run_audit, rather than counting speculative work.
+                        attempts = max(matched_attempt.values())
                         break  # every target matched; stop early
                 else:
                     attempts = max(attempts, offset + batch_size)
