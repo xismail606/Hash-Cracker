@@ -17,6 +17,11 @@ v2 feature-expansion plan ([specs/002-feature-expansion](specs/002-feature-expan
 
 ### Fixed
 
+- docs/index.html mobile layout: the fixed navbar no longer overflows narrow
+  screens (the version pill and the Download button hide below 640px), the mock
+  terminal bar stays on one line, a scroll failsafe guarantees reveal sections
+  appear even when IntersectionObserver is throttled, and the hero test-count
+  stat tracks the suite (145).
 - Parallel audits now preserve candidate order and first-match positions,
   enforce candidate budgets at batch boundaries, and keep attempt counts exact.
   Resumable single-target runs continue from the next unprocessed candidate.

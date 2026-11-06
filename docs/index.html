@@ -426,6 +426,14 @@
       .stat { flex: 1 1 46%; }
       /* divider at the start of the second row is hidden */
       .stat:nth-child(3)::before { display: none; }
+      /* fixed navbar must fit narrow screens: drop the version pill and the
+         Download button (the hero CTA + GitHub link carry the same actions) */
+      .nav { padding: 10px 12px 0; }
+      .nav-inner { height: 54px; padding: 0 8px 0 14px; gap: 10px; }
+      .brand-tag { display: none; }
+      .nav-right .btn-white { display: none; }
+      /* keep the mock terminal bar on one line: the loopback host is decorative here */
+      .terminal-bar .terminal-title:last-of-type { display: none; }
     }
     .stat b {
       display: block;
@@ -895,7 +903,7 @@
       <!-- Stats -->
       <div class="stats reveal">
         <div class="stat"><b data-count="23">0</b><span>Hash formats</span></div>
-        <div class="stat"><b data-count="131">0</b><span>Pytest tests</span></div>
+        <div class="stat"><b data-count="145">0</b><span>Pytest tests</span></div>
         <div class="stat"><b data-count="3">0</b><span>Platforms</span></div>
         <div class="stat"><b data-count="100" data-suffix="%">0</b><span>Offline</span></div>
       </div>
@@ -1317,12 +1325,22 @@
         els.forEach(function (el) { el.classList.add("in"); });
         return;
       }
+      var revealed = 0;
       var io = new IntersectionObserver(function (entries) {
         entries.forEach(function (e) {
-          if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
+          if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); revealed++; }
         });
       }, { threshold: 0.12, rootMargin: "0px 0px -40px 0px" });
       els.forEach(function (el) { io.observe(el); });
+      /* Failsafe: on some mobile webviews the observer can be throttled or starved.
+         If the first real scroll produced no reveals, show every section anyway —
+         a blank section is worse than a skipped entrance animation. */
+      window.addEventListener("scroll", function onFirstScroll() {
+        window.removeEventListener("scroll", onFirstScroll);
+        setTimeout(function () {
+          if (!revealed) els.forEach(function (el) { el.classList.add("in"); });
+        }, 900);
+      }, { passive: true });
     })();
 
     /* ===================== Count-up stats ===================== */
