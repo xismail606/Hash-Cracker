@@ -223,14 +223,16 @@ def list_runs(conn: sqlite3.Connection, limit: int | None = None) -> list[AuditR
 def clear_runs(conn: sqlite3.Connection) -> int:
     """Delete every local audit record; return the number of removed rows.
 
-    This permanently erases successful plaintext/hash pairs and run metadata.
-    The caller is responsible for confirming the destructive action first.
+    This permanently erases successful plaintext/hash pairs, hashlist summaries,
+    and run metadata. The caller confirms the destructive action first.
     """
     try:
-        cursor = conn.execute("DELETE FROM audit_runs")
+        run_cursor = conn.execute("DELETE FROM audit_runs")
+        batch_cursor = conn.execute("DELETE FROM audit_batches")
         conn.commit()
-        return int(cursor.rowcount or 0)
+        return int(run_cursor.rowcount or 0) + int(batch_cursor.rowcount or 0)
     except sqlite3.Error as exc:
+        conn.rollback()
         raise HistoryError(f"Cannot clear local audit history: {exc}") from exc
 
 

@@ -56,7 +56,7 @@ An auditor runs the same supported identification and audit modes from either th
 1. **Given** a valid CLI audit request, **When** the command runs, **Then** it displays the selected mode, worker count, progress, attempts, elapsed time, and terminal result.
 2. **Given** a valid web audit request, **When** the run starts, **Then** the dashboard displays live progress and the recovered plaintext for a successful match.
 3. **Given** a request from another origin or a non-loopback network client, **When** it attempts to reach or mutate a web audit, **Then** the local dashboard denies the request.
-4. **Given** a web wordlist upload larger than 100 MiB, **When** the user submits it, **Then** the dashboard rejects it before candidate processing.
+4. **Given** a web wordlist upload larger than 256 MiB, **When** the user submits it, **Then** the dashboard rejects it before candidate processing.
 
 ---
 
@@ -101,7 +101,7 @@ An auditor reviews previous runs and exports local reports containing successful
 - **FR-008**: The system MUST provide a CLI for hash, algorithm, mode, wordlist or brute-force options, worker count, and history/report operations.
 - **FR-009**: The system MUST provide a local web dashboard for hash input, mode selection, progress monitoring, and result display.
 - **FR-010**: The web application MUST bind to loopback only, reject cross-origin state-changing requests, and MUST NOT transmit audit data to external services.
-- **FR-011**: The web application MUST accept wordlist uploads up to 100 MiB and remove temporary copies after completion, cancellation, validation failure, or shutdown.
+- **FR-011**: The web application MUST accept wordlist uploads up to 256 MiB and remove temporary copies after completion, cancellation, validation failure, or shutdown.
 - **FR-012**: The system MUST store audit history locally in SQLite, including algorithm, mode, status, total attempts, elapsed time, timestamp, and target hash.
 - **FR-013**: For successful matches, the system MUST automatically record the recovered plaintext and corresponding target hash in local history for reporting. Before candidate processing begins, the system MUST warn that successful results are sensitive credential data and require the operator to acknowledge local retention.
 - **FR-014**: The system MUST distinguish match, no-match, invalid input, cancelled/interrupted, candidate-budget-exceeded, and storage-failure outcomes.
@@ -134,5 +134,5 @@ An auditor reviews previous runs and exports local reports containing successful
 - Brute-force mode will have a bounded default budget of 1,000,000 candidates and a hard maximum of 10,000,000 per run; the selected charset and length range remain explicit.
 - Worker count will default to 4 and have a hard maximum of 8.
 - Successful plaintext/hash pairs are intentionally stored in local SQLite because the project brief explicitly requests them; the user receives a warning before an audit is saved.
-- Web wordlist uploads are limited to 100 MiB; the CLI can read larger local files.
-- The project contains no implementation yet; commands and structures are planned contracts.
+- Web wordlist uploads are limited to 256 MiB; the CLI can read larger local files.
+- This document records the original v1 specification; implementation status and later changes are tracked in `README.md` and `CHANGELOG.md`.

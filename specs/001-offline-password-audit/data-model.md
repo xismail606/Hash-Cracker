@@ -16,7 +16,7 @@
 | target hash | string | Must be valid for the selected algorithm |
 | algorithm | name | One of `md5`, `sha256`, `ntlm`; explicit selection for ambiguous formats |
 | mode | enum | `dictionary` or `brute-force` |
-| wordlist path | local path | Required for dictionary mode; web upload limit 100 MiB |
+| wordlist path | local path | Required for dictionary mode; web upload limit 256 MiB |
 | charset | string or preset | Required for brute-force mode; non-empty and unique characters |
 | minimum length | integer | Required for brute-force mode; positive and no greater than maximum length |
 | maximum length | integer | Required for brute-force mode; must be compatible with the configured candidate budget |

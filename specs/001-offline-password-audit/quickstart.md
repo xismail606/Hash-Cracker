@@ -142,7 +142,7 @@ Open the printed localhost URL. The dashboard offers hash identification, algori
 
 - `GET /api/session` issues a CSRF token; `POST` routes without it return 403, and requests with a foreign `Origin` return 403.
 - A second audit start while one is running returns HTTP 409.
-- Wordlist uploads above 100 MiB are rejected before processing; the temporary copy is deleted.
+- Wordlist uploads above 256 MiB are rejected before processing; the temporary copy is deleted.
 - The server binds only to `127.0.0.1`.
 - Temporary wordlist uploads are deleted after completion, cancellation, validation failure, and graceful shutdown.
 
@@ -165,7 +165,7 @@ All scenarios below were walked through with synthetic data during implementatio
 - Run brute-force mode with a matching short secret; verify the attempt count equals the candidate's position in the deterministic generation order.
 - Run brute-force mode with a budget below the search space; verify `budget_exhausted` at exactly the budget.
 - Verify NTLM hashing via Passlib `nthash` (MD4 over UTF-16LE) and the built-in MD4 fallback (validated against the RFC 1320 test vectors).
-- Verify the web API rejects malformed hashes, missing CSRF tokens, cross-origin mutations, and uploads above 100 MiB.
+- Verify the web API rejects malformed hashes, missing CSRF tokens, cross-origin mutations, and uploads above 256 MiB.
 - Verify cancellation from the dashboard returns a `cancelled` state and a fresh job can start afterwards.
 - Verify the database stores match pairs, attempts, elapsed time, algorithm, mode, status, and worker count; verify CSV/JSON export contains those fields.
 

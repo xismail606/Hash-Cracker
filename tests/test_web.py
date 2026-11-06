@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from password_audit.web import MAX_UPLOAD_BYTES, create_app
+from password_audit.web import create_app
 
 
 @pytest.fixture()
@@ -139,6 +139,23 @@ class TestAuditLifecycle:
 
 
 class TestUploadLimits:
+    def test_request_size_limit_returns_a_readable_json_error(self, app, client, csrf):
+        app.config["MAX_CONTENT_LENGTH"] = 512
+        response = post_audit(
+            client,
+            csrf,
+            mode="dictionary",
+            hash="8743b52063cd84097a65d1633f5c74f5",
+            algorithm="md5",
+            workers="2",
+            wordlist=(io.BytesIO(b"a" * 1024), "large.txt"),
+        )
+
+        assert response.status_code == 413
+        assert response.get_json() == {
+            "error": "The upload request exceeds the 256 MiB limit."
+        }
+
     def test_oversize_upload_rejected_before_processing(self, client, csrf, monkeypatch):
         # MAX_UPLOAD_BYTES is patched to 4096 in the fixture; upload 5 KiB.
         big = io.BytesIO(b"a" * (5 * 1024))
@@ -151,7 +168,7 @@ class TestUploadLimits:
             wordlist=(big, "big.txt"),
         )
         assert response.status_code == 413
-        assert "100 MiB" in response.get_json()["error"]
+        assert "256 MiB" in response.get_json()["error"]
 
     def test_missing_wordlist_rejected(self, client, csrf):
         response = post_audit(
@@ -178,6 +195,34 @@ class TestHistoryAndClear:
         response = client.post("/api/history/clear", headers=auth(client, csrf))
         assert response.get_json()["deleted"] >= 1
         assert client.get("/api/history").get_json()["records"] == []
+
+    def test_clear_removes_hashlist_summaries_and_uploaded_file(self, app, client, csrf):
+        response = post_audit(
+            client,
+            csrf,
+            mode="dictionary",
+            hashlist=(io.BytesIO(b"md5:8743b52063cd84097a65d1633f5c74f5\n"), "targets.txt"),
+            wordlist=(io.BytesIO(b"hashcat\n"), "words.txt"),
+        )
+        assert response.status_code == 202
+        uploaded_hashlist = app.config["_job"].temp_hashlist
+        assert uploaded_hashlist is not None
+        wait_for_job(client, response.get_json()["job_id"])
+        cleanup_deadline = time.time() + 2
+        while uploaded_hashlist.exists() and time.time() < cleanup_deadline:
+            time.sleep(0.01)
+        assert not uploaded_hashlist.exists()
+
+        before = client.get("/api/export?format=json").get_json()
+        assert len(before["runs"]) == 1
+        assert len(before["batches"]) == 1
+
+        response = client.post("/api/history/clear", headers=auth(client, csrf))
+        assert response.get_json()["deleted"] == 2
+
+        after = client.get("/api/export?format=json").get_json()
+        assert after["runs"] == []
+        assert after["batches"] == []
 
     def test_history_includes_plaintext_for_matches(self, client, csrf):
         response = post_audit(
@@ -287,6 +332,27 @@ class TestPlaintextWithholding:
         assert payload["result"]["plaintext_withheld"] is True
         records = client.get("/api/history").get_json()["records"]
         assert any(r["plaintext_withheld"] for r in records)
+
+    def test_withheld_hashlist_matches_are_not_returned_or_stored(self, client, csrf):
+        response = post_audit(
+            client,
+            csrf,
+            mode="dictionary",
+            store_plaintext="false",
+            hashlist=(io.BytesIO(b"md5:8743b52063cd84097a65d1633f5c74f5\n"), "targets.txt"),
+            wordlist=(io.BytesIO(b"hashcat\n"), "words.txt"),
+        )
+        payload = wait_for_job(client, response.get_json()["job_id"])
+        target = payload["result"]["targets"][0]
+        assert payload["result"]["plaintext_withheld"] is True
+        assert target["status"] == "match"
+        assert target["matched_plaintext"] is None
+        assert target["plaintext_withheld"] is True
+
+        records = client.get("/api/history").get_json()["records"]
+        match = next(record for record in records if record["status"] == "match")
+        assert match["matched_plaintext"] is None
+        assert match["plaintext_withheld"] is True
 
 
 class TestEncryption:

@@ -17,7 +17,7 @@ The dashboard uses Astro, React, JavaScript, and Tailwind CSS. Flask serves the 
 - Requires an explicit MD5, NTLM, or MD4 choice for 32-character hexadecimal hashes.
 - Offers dictionary and brute-force modes.
 - Offers the salted fast-hash formats (`md5($pass.$salt)` … `sha512($salt.$pass)`) in an advanced format select with a required salt field; the backend rejects salted starts without a salt and unsalted formats with one.
-- Dictionary mode accepts one UTF-8 wordlist upload up to 100 MiB.
+- Dictionary mode accepts one UTF-8 wordlist upload up to 256 MiB.
 - An optional hashlist upload (same format as the CLI hashlist) audits many targets in one pass; it replaces the single hash field and its per-target results are shown in a results table with the batch ID.
 - Dictionary mode offers mutation-rule presets that expand candidates inside the candidate budget.
 - A run-level checkbox withholds the recovered plaintext from local history (the match is still recorded with a withheld marker).

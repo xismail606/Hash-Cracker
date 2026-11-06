@@ -5,6 +5,33 @@ Dates use YYYY-MM-DD. The project follows the four-phase v1 plan
 ([specs/001-offline-password-audit](specs/001-offline-password-audit)) and the
 v2 feature-expansion plan ([specs/002-feature-expansion](specs/002-feature-expansion)).
 
+## Unreleased
+
+### Changed
+
+- Increased the dashboard wordlist upload limit from 100 MiB to 256 MiB.
+- Oversized upload requests now return a readable JSON `413` response that
+  states the configured limit.
+- Brute-force progress and ETA use the effective search limit (the smaller of
+  the candidate space and configured budget).
+
+### Fixed
+
+- Parallel audits now preserve candidate order and first-match positions,
+  enforce candidate budgets at batch boundaries, and keep attempt counts exact.
+  Resumable single-target runs continue from the next unprocessed candidate.
+- Clearing local history also removes hashlist batch summaries.
+- Withheld plaintext stays hidden in CLI and dashboard results for hashlist
+  matches as well as single-target matches.
+- Dashboard navigation headings now have matching section IDs; removed the
+  LinkedIn footer link and added a site favicon.
+
+### Tests
+
+- Added regression coverage for parallel match ordering, budget truncation,
+  pause/resume accounting, oversized uploads, batch-history clearing, and
+  withheld hashlist plaintext.
+
 ## v2.0.0 — 2026-11-06 (Feature Expansion)
 
 ### Added

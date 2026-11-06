@@ -24,7 +24,7 @@ The system is restricted to one operator-selected target per run and local input
 
 **Performance Goals**: Complete dictionary comparison for 100,000 short entries in under 60 seconds on a typical student laptop; multiprocessing must show progress and attempts. Brute-force mode is governed by a candidate budget and may be stopped by the user.
 
-**Constraints**: Authorized, local, offline auditing only; supported algorithms are MD5, SHA-256, and NTLM; MD5 and NTLM are ambiguous by shape; worker limit is 1–8 (default 4); brute-force budget defaults to 1,000,000 and is capped at 10,000,000; dashboard upload limit is 100 MiB; dashboard binds only to `127.0.0.1`; successful plaintext/hash pairs are persisted locally with a warning.
+**Constraints**: Authorized, local, offline auditing only; supported algorithms are MD5, SHA-256, and NTLM; MD5 and NTLM are ambiguous by shape; worker limit is 1–8 (default 4); brute-force budget defaults to 1,000,000 and is capped at 10,000,000; dashboard upload limit is 256 MiB; dashboard binds only to `127.0.0.1`; successful plaintext/hash pairs are persisted locally with a warning.
 
 **Scale/Scope**: One target per run; dictionary or bounded brute-force mode; one dashboard job active at a time; a single local user and SQLite history.
 
@@ -103,7 +103,7 @@ frontend/
 - Dictionary mode reads the supplied file incrementally in bounded chunks. It preserves duplicate entries and strips only line endings.
 - Brute-force mode generates candidates from one selected alphabet and configured minimum/maximum length. It must stop at the configured candidate budget (default 1,000,000; hard maximum 10,000,000), on match, or on cancellation.
 - Show progress, attempts, effective worker count, and elapsed time in both CLI and dashboard.
-- The dashboard is served locally on `127.0.0.1`. Mutating routes use same-origin/CSRF protection. Web uploads are limited to 100 MiB and temporary copies are deleted after success, failure, cancellation, or shutdown.
+- The dashboard is served locally on `127.0.0.1`. Mutating routes use same-origin/CSRF protection. Web uploads are limited to 256 MiB and temporary copies are deleted after success, failure, cancellation, or shutdown.
 - Store audit summaries in SQLite. On a successful match, persist plaintext and target hash together with a warning to the operator. Reports are local and should be access-controlled with normal local filesystem permissions.
 
 ## Post-Design Constitution Check

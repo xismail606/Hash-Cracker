@@ -31,7 +31,6 @@ from .benchmark import measure_all
 from .bruteforce import (
     DEFAULT_BUDGET,
     HARD_MAX_BUDGET,
-    CHARSET_PRESETS,
     iter_bruteforce_batches,
     resolve_charset,
     validate_bruteforce_options,
@@ -59,8 +58,6 @@ from .history import (
     export_json,
     list_runs,
     decrypt_stored,
-    derive_key,
-    ensure_encryption_salt,
     init_encryption,
     is_encrypted_value,
     record_batch,
@@ -94,6 +91,12 @@ def _print_progress(attempts: int, elapsed_ms: int, fraction: float | None) -> N
     percent = f" {fraction * 100:5.1f}%" if fraction is not None else ""
     print(f"\r  Attempts: {attempts:>12,}{percent}  Elapsed: {elapsed_ms / 1000:6.1f}s",
           end="", file=sys.stderr, flush=True)
+
+
+def _progress_limit(total_space: int | None, budget: int | None) -> int | None:
+    if total_space is None:
+        return None
+    return min(total_space, budget) if budget is not None else total_space
 
 
 def cmd_identify(args: argparse.Namespace) -> int:
@@ -239,6 +242,10 @@ def cmd_audit(args: argparse.Namespace) -> int:
         print("The audit was not started because the retention warning was not acknowledged.",
               file=sys.stderr)
         return EXIT_INVALID
+    withhold = getattr(args, "no_store_plaintext", False)
+    if withhold and getattr(args, "encrypt", False):
+        print("--encrypt and --no-store-plaintext are mutually exclusive.", file=sys.stderr)
+        return EXIT_INVALID
 
     mode_label = "dictionary" if args.mode == "dictionary" else "brute-force"
     print(f"Mode      : {mode_label}")
@@ -257,29 +264,32 @@ def cmd_audit(args: argparse.Namespace) -> int:
 
     cancel_event = threading.Event()
     started_at = utc_now()
-    progress_at = [0.0]
-    progress_rate = [0.0, 0.0]  # (monotonic timestamp, attempts at timestamp)
+    progress_limit = _progress_limit(total_space, budget)
+    progress_sample = [time.monotonic(), 0]  # (monotonic timestamp, attempts)
+    last_progress_at = [progress_sample[0]]
 
     def progress(attempts: int, elapsed_ms: int, fraction: float | None) -> None:
         now = time.monotonic()
-        if now - progress_at[0] >= 0.25:
-            prev_t, prev_a = progress_rate[0], progress_rate[1]
-            if prev_t and now > prev_t and attempts >= prev_a:
-                progress_rate[0] = now
-                progress_rate[1] = attempts
-            elif not prev_t:
-                progress_rate[0] = now
-                progress_rate[1] = attempts
-            _print_progress(attempts, elapsed_ms, fraction)
-            # ETA when a bounded total is known.
-            if total_space and total_space > attempts and progress_rate[0] > prev_t:
-                rate = (progress_rate[1] - prev_a) / (progress_rate[0] - prev_t)
-                if rate > 0:
-                    remaining = (total_space - attempts) / rate
-                    print(
-                        f"\r  ETA ~{remaining:.0f}s ({rate:,.0f} candidates/s)   ",
-                        end="", file=sys.stderr, flush=True,
-                    )
+        if now - last_progress_at[0] < 0.25:
+            return
+        previous_time, previous_attempts = progress_sample
+        rate = (
+            (attempts - previous_attempts) / (now - previous_time)
+            if attempts > previous_attempts and now > previous_time
+            else None
+        )
+        progress_fraction = (
+            min(attempts / progress_limit, 1.0) if progress_limit else fraction
+        )
+        _print_progress(attempts, elapsed_ms, progress_fraction)
+        if progress_limit is not None and attempts < progress_limit and rate:
+            remaining = (progress_limit - attempts) / rate
+            print(
+                f"\r  ETA ~{remaining:.0f}s ({rate:,.0f} candidates/s)   ",
+                end="", file=sys.stderr, flush=True,
+            )
+        progress_sample[:] = [now, attempts]
+        last_progress_at[0] = now
 
     print("Starting audit; press Ctrl+C to interrupt...")
     try:
@@ -334,12 +344,8 @@ def cmd_audit(args: argparse.Namespace) -> int:
             "history as sensitive audit data."
         )
 
-    withhold = getattr(args, "no_store_plaintext", False)
     plaintext_key = None
     if getattr(args, "encrypt", False):
-        if withhold:
-            print("--encrypt and --no-store-plaintext are mutually exclusive.", file=sys.stderr)
-            return EXIT_INVALID
         passphrase = _resolve_passphrase(args, confirm=not args.passphrase)
         if not passphrase:
             print("Passphrases do not match or are empty; the audit was not started.",
@@ -390,8 +396,11 @@ def cmd_audit(args: argparse.Namespace) -> int:
                     elapsed_ms=result.elapsed_ms,
                     worker_count=result.workers,
                     started_at=started_at,
-                    matched_plaintext=t["matched_plaintext"],
+                    matched_plaintext=(
+                        None if withhold else t["matched_plaintext"]
+                    ),
                     batch_id=batch_id,
+                    plaintext_withheld=withhold,
                     plaintext_key=plaintext_key,
                 )
             print(f"Batch     : {batch_id[:8]} ({len(result.targets)} target records)")

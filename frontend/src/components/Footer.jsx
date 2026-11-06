@@ -1,4 +1,4 @@
-import { ChevronRight, GitBranch, AtSign, Terminal, Lock, Wifi, WifiOff } from "lucide-react";
+import { ChevronRight, GitBranch, Terminal, Lock, Wifi, WifiOff } from "lucide-react";
 
 // Footer adapted from the CyberSec Arsenal Footer: brand column, in-page
 // quick links, safety notes, and a pulsing-dot bottom bar.
@@ -51,18 +51,6 @@ export default function Footer() {
                   <GitBranch size={16} aria-hidden="true" />
                 </span>
                 <span>GitHub</span>
-              </a>
-              <a
-                href="https://www.linkedin.com/in/ismailabdelhameed"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group flex w-fit items-center gap-3 text-sm text-text-muted transition-all duration-200 hover:translate-x-1 hover:text-accent"
-                aria-label="LinkedIn profile (opens in a new tab)"
-              >
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface-raised/60 text-text-muted transition-colors group-hover:border-accent/30 group-hover:text-accent">
-                  <AtSign size={16} aria-hidden="true" />
-                </span>
-                <span>LinkedIn</span>
               </a>
             </div>
           </div>

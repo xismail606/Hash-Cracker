@@ -16,7 +16,7 @@ from __future__ import annotations
 import multiprocessing
 import time
 from collections.abc import Callable, Iterator
-from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
+from concurrent.futures import Future, ProcessPoolExecutor, TimeoutError
 from dataclasses import dataclass
 from typing import Any
 
@@ -109,6 +109,23 @@ def _hash_batch(
     return None
 
 
+def _await_ordered_batch(
+    future: Future,
+    cancel_event: Any,
+    pause_event: Any = None,
+) -> tuple[Any, bool, bool]:
+    paused = False
+    while True:
+        if cancel_event is not None and cancel_event.is_set():
+            return None, True, paused
+        if pause_event is not None and pause_event.is_set():
+            paused = True
+        try:
+            return future.result(timeout=0.1), False, paused
+        except TimeoutError:
+            continue
+
+
 def run_audit(
     target_hash: str,
     algorithm: str,
@@ -157,6 +174,9 @@ def run_audit(
     budget_is_limit = budget is not None and (
         total_space is None or total_space > budget
     )
+    budget_remaining = (
+        max(0, budget - attempts_base) if budget is not None else None
+    )
 
     started = time.monotonic()
     attempts = attempts_base
@@ -199,7 +219,7 @@ def run_audit(
                     paused = True
                     exhausted = True
                     break
-                if budget is not None and submitted >= budget:
+                if budget_remaining is not None and submitted >= budget_remaining:
                     budget_stopped = True
                     exhausted = True
                     break
@@ -208,7 +228,11 @@ def run_audit(
                 except StopIteration:
                     exhausted = True
                     break
-                offset = submitted
+                if budget_remaining is not None:
+                    batch = batch[: budget_remaining - submitted]
+                if not batch:
+                    continue
+                offset = attempts_base + submitted
                 submitted += len(batch)
                 future = executor.submit(_hash_batch, batch, algorithm, target_hash, salt)
                 pending[future] = (len(batch), offset)
@@ -216,25 +240,24 @@ def run_audit(
             if cancelled or matched is not None or not pending:
                 break
 
-            done, _ = wait(list(pending), return_when=FIRST_COMPLETED)
-            stop = False
-            for future in sorted(done, key=lambda f: pending[f][1]):
-                batch_size, offset = pending.pop(future)
-                hit = future.result()
-                if hit is not None:
-                    match_index, match_value = hit
-                    matched = match_value
-                    attempts = offset + match_index + 1
-                    stop = True
-                    break
-                # Batches may complete out of order; attempts must stay
-                # monotonic in submission order.
-                attempts = max(attempts, offset + batch_size)
-                if progress_callback is not None:
-                    fraction = min(attempts / total_space, 1.0) if total_space else None
-                    progress_callback(attempts, elapsed_ms(), fraction)
-            if stop:
+            future = min(pending, key=lambda item: pending[item][1])
+            batch_size, offset = pending.pop(future)
+            hit, cancelled, pause_requested = _await_ordered_batch(
+                future, cancel_event, pause_event
+            )
+            if pause_requested:
+                paused = True
+                exhausted = True
+            if cancelled:
                 break
+            if hit is not None:
+                match_index, matched = hit
+                attempts = offset + match_index + 1
+                break
+            attempts = max(attempts, offset + batch_size)
+            if progress_callback is not None:
+                fraction = min(attempts / total_space, 1.0) if total_space else None
+                progress_callback(attempts, elapsed_ms(), fraction)
     except KeyboardInterrupt:
         # Operator pressed Ctrl+C; report as interrupted rather than a
         # deliberate cancellation through cancel_event.
@@ -259,7 +282,7 @@ def run_audit(
     if result.status == STATUS_PAUSED:
         result.resume = {
             "attempts_base": result.attempts,
-            "skip_source": submitted,
+            "skip_source": skip_count + submitted,
         }
     return result
 
@@ -278,23 +301,28 @@ class HashlistResult:
 
 def _hash_batch_multi(
     batch: list[str], targets_by_algorithm: dict[str, dict[str, list[int]]]
-) -> tuple[int, list[tuple[int, str]]] | None:
+) -> tuple[int, dict[int, tuple[int, str]]] | None:
     """Hash each candidate once per target algorithm; report all matches.
 
     ``targets_by_algorithm`` maps algorithm -> digest -> list of target ids.
-    Returns (index, [(target_id, plaintext), ...]) for the first candidate
-    that matches any target, or None. Runs inside worker processes and must
-    stay a module-level function for spawn pickling on Windows.
+    Returns (candidates_examined, {target_id: (index, plaintext)}) for every
+    target matched in the batch, or None. Runs inside worker processes and
+    must stay a module-level function for spawn pickling on Windows.
     """
+    target_count = sum(
+        len(target_ids)
+        for digest_map in targets_by_algorithm.values()
+        for target_ids in digest_map.values()
+    )
+    matched: dict[int, tuple[int, str]] = {}
     for index, candidate in enumerate(batch):
-        matched: list[tuple[int, str]] = []
         for algorithm, digest_map in targets_by_algorithm.items():
             digest = hash_candidate(candidate, algorithm)
             for target_id in digest_map.get(digest, ()):
-                matched.append((target_id, candidate))
-        if matched:
-            return index, matched
-    return None
+                matched.setdefault(target_id, (index, candidate))
+        if len(matched) == target_count:
+            return index + 1, matched
+    return (len(batch), matched) if matched else None
 
 
 def run_hashlist_audit(
@@ -331,6 +359,9 @@ def run_hashlist_audit(
             target["hash"], []
         ).append(target["id"])
     unmatched_count = len(targets)
+    budget_is_limit = budget is not None and (
+        total_space is None or total_space > budget
+    )
 
     started = time.monotonic()
     attempts = 0
@@ -392,6 +423,10 @@ def run_hashlist_audit(
                 except StopIteration:
                     exhausted = True
                     break
+                if budget is not None:
+                    batch = batch[: budget - submitted]
+                if not batch:
+                    continue
                 offset = submitted
                 submitted += len(batch)
                 future = executor.submit(
@@ -402,31 +437,27 @@ def run_hashlist_audit(
             if cancelled or not pending:
                 break
 
-            done, _ = wait(list(pending), return_when=FIRST_COMPLETED)
-            for future in sorted(done, key=lambda f: pending[f][1]):
-                batch_size, offset = pending.pop(future)
-                hit = future.result()
-                if hit is not None:
-                    match_index, matches = hit
-                    attempts = max(attempts, offset + match_index + 1)
-                    for target_id, plaintext in matches:
-                        matched_plaintext.setdefault(target_id, plaintext)
-                        matched_attempt.setdefault(target_id, offset + match_index + 1)
-                    if len(matched_plaintext) == unmatched_count:
-                        # A later batch may have completed first and advanced
-                        # attempts beyond the final match. Once every target
-                        # is found, report the last required candidate, as in
-                        # run_audit, rather than counting speculative work.
-                        attempts = max(matched_attempt.values())
-                        break  # every target matched; stop early
-                else:
-                    attempts = max(attempts, offset + batch_size)
-                if progress_callback is not None:
-                    fraction = min(attempts / total_space, 1.0) if total_space else None
-                    progress_callback(attempts, elapsed_ms(), fraction)
+            future = min(pending, key=lambda item: pending[item][1])
+            batch_size, offset = pending.pop(future)
+            hit, cancelled, _ = _await_ordered_batch(future, cancel_event)
+            if cancelled:
+                break
+            if hit is not None:
+                candidates_examined, batch_matches = hit
+                attempts = max(attempts, offset + candidates_examined)
+                for target_id, (match_index, plaintext) in batch_matches.items():
+                    matched_plaintext.setdefault(target_id, plaintext)
+                    matched_attempt.setdefault(
+                        target_id, offset + match_index + 1
+                    )
+                if len(matched_plaintext) == unmatched_count:
+                    attempts = max(matched_attempt.values())
+                    break
             else:
-                continue
-            break
+                attempts = max(attempts, offset + batch_size)
+            if progress_callback is not None:
+                fraction = min(attempts / total_space, 1.0) if total_space else None
+                progress_callback(attempts, elapsed_ms(), fraction)
     except KeyboardInterrupt:
         interrupted = True
     finally:
@@ -436,7 +467,7 @@ def run_hashlist_audit(
             status = STATUS_CANCELLED
         elif matched_plaintext:
             status = STATUS_MATCH
-        elif budget_stopped:
+        elif budget_is_limit and budget_stopped:
             status = STATUS_BUDGET_EXHAUSTED
         else:
             status = STATUS_NO_MATCH

@@ -5,7 +5,7 @@ changing routes require a same-origin request plus an anti-CSRF token issued
 by ``GET /api/session`` (double-submit cookie + header). One dashboard audit
 job may run at a time; the CLI can run separately.
 
-Wordlist uploads are limited to 100 MiB and are stored as temporary files
+Wordlist uploads are limited to 256 MiB and are stored as temporary files
 that are deleted after completion, cancellation, validation failure, or
 application shutdown. The browser never sees temporary file paths or raw
 exception traces.
@@ -14,16 +14,17 @@ exception traces.
 from __future__ import annotations
 
 import atexit
+import csv as _csv
+import io as _io
+import json
 import os
 import secrets
 import shutil
 import tempfile
 import threading
-import uuid
-import json
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_from_directory
 
 from .algorithms import (
     ALGORITHM_NAMES,
@@ -41,18 +42,17 @@ from .bruteforce import (
 )
 from .candidates import iter_wordlist_batches, parse_hashlist
 from .engine import (
-    DEFAULT_WORKERS,
     MAX_WORKERS,
-    STATUS_MATCH,
     STATUS_PAUSED,
-    run_audit,
-    run_hashlist_audit,
 )
 from .rules import iter_rule_expanded, resolve_rules_preset
-import csv as _csv
-import io as _io
-
-from flask import Response
+from .job_execution import (
+    AuditJobRequest,
+    AuditJobRunner,
+    CandidateSource,
+    DashboardJob,
+    new_job_id,
+)
 
 from .history import (
     DEFAULT_DB_PATH,
@@ -62,16 +62,14 @@ from .history import (
     export_rows,
     init_encryption,
     is_encrypted_value,
-    record_batch,
     HistoryError,
     clear_runs,
     connect,
     list_runs,
-    record_run,
     utc_now,
 )
 
-MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MiB
+MAX_UPLOAD_BYTES = 256 * 1024 * 1024  # 256 MiB
 UPLOAD_CHUNK = 1024 * 1024
 DEFAULT_PORT = 8765
 
@@ -81,30 +79,10 @@ _STATE_RUNNING = "running"
 _STATE_VALIDATING = "validating"
 
 
-class DashboardJob:
-    """State for one dashboard audit job."""
-
-    def __init__(self, job_id: str) -> None:
-        self.job_id = job_id
-        self.state = _STATE_VALIDATING
-        self.target_hash = ""
-        self.algorithm = ""
-        self.mode = ""
-        self.workers = DEFAULT_WORKERS
-        self.budget = None
-        self.cancel_event = threading.Event()
-        self.pause_event = threading.Event()
-        self.resume_state: dict | None = None
-        self.run_params: dict = {}
-        self.thread: threading.Thread | None = None
-        self.temp_path: Path | None = None
-        self.started_at = ""
-        self.targets: list[dict] | None = None
-        self.result: dict | None = None
-        self.error: str | None = None
-        self.attempts = 0
-        self.elapsed_ms = 0
-        self.lock = threading.Lock()
+class AuditPreparationError(ValueError):
+    def __init__(self, message: str, status_code: int = 400) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def create_app(
@@ -127,6 +105,10 @@ def create_app(
         static_url_path="/assets",
     )
     app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES + (1024 * 1024)
+
+    @app.errorhandler(413)
+    def upload_too_large(_error):
+        return jsonify({"error": "The upload request exceeds the 256 MiB limit."}), 413
 
     # One active dashboard job at a time.
     app.config["_job_lock"] = threading.Lock()
@@ -233,171 +215,56 @@ def create_app(
             return None, f"Worker count must be between 1 and {MAX_WORKERS}."
         return {"target": assessment.normalized, "workers": workers}, None
 
-    def _start_job(params: dict, mode: str, batch_source, budget, total_space, temp_path, salt=None, targets=None, plaintext_withheld=False) -> tuple[DashboardJob | None, dict | None]:
-        job = DashboardJob(job_id=uuid.uuid4().hex)
-        job.target_hash = params["target"]
-        job.algorithm = params["algorithm"]
-        job.mode = mode
-        job.workers = params["workers"]
-        job.budget = budget
-        job.salt = salt
-        job.targets = targets
-        job.plaintext_withheld = plaintext_withheld
-        job.temp_path = temp_path
-        job.temp_hashlist = None
-        job.started_at = utc_now()
-        job.run_params = {
-            **params,
-            "mode": mode,
-            "salt": salt,
+    def _start_job(
+        job_request: AuditJobRequest,
+    ) -> tuple[DashboardJob | None, dict | None]:
+        job = _create_dashboard_job(job_request)
+        error = _reserve_job(job)
+        if error is not None:
+            return None, error
+        runner = AuditJobRunner(job, job_request, db_path)
+        job.thread = threading.Thread(target=runner.run, daemon=True)
+        job.thread.start()
+        return job, None
+
+    def _create_dashboard_job(job_request: AuditJobRequest) -> DashboardJob:
+        return DashboardJob(
+            job_id=new_job_id(),
+            started_at=utc_now(),
+            run_params=_dashboard_run_params(job_request),
+            **_dashboard_job_fields(job_request),
+        )
+
+    def _dashboard_job_fields(job_request: AuditJobRequest) -> dict:
+        params = job_request.params
+        source = job_request.source
+        return {
+            "target_hash": params["target"],
+            "algorithm": params["algorithm"],
+            "mode": job_request.mode,
+            "workers": params["workers"],
+            "budget": source.budget,
+            "salt": job_request.salt,
+            "targets": job_request.targets,
+            "plaintext_withheld": job_request.plaintext_withheld,
+            "temp_path": source.temp_path,
+            "temp_hashlist": job_request.temp_hashlist,
+        }
+
+    def _dashboard_run_params(job_request: AuditJobRequest) -> dict:
+        source = job_request.source
+        return {
+            **job_request.params,
+            "mode": job_request.mode,
+            "salt": job_request.salt,
             "wordlist_size": (
-                os.path.getsize(str(temp_path)) if temp_path and mode == "dictionary" else None
+                os.path.getsize(source.temp_path)
+                if source.temp_path is not None and job_request.mode == "dictionary"
+                else None
             ),
         }
 
-        def run_job():
-            job.state = _STATE_RUNNING
-            started = utc_now()
-            try:
-                if job.targets is not None:
-                    hl = run_hashlist_audit(
-                        job.targets,
-                        batch_source,
-                        workers=job.workers,
-                        budget=budget,
-                        total_space=total_space,
-                        cancel_event=job.cancel_event,
-                        progress_callback=_progress,
-                    )
-                    job.result = {
-                        "status": hl.status,
-                        "attempts": hl.attempts,
-                        "elapsed_ms": hl.elapsed_ms,
-                        "workers": hl.workers,
-                        "matched_plaintext": None,
-                        "target_hash": None,
-                        "targets": hl.targets,
-                    }
-                    job.attempts = hl.attempts
-                    job.elapsed_ms = hl.elapsed_ms
-                    # Record per-target rows plus a batch summary.
-                    try:
-                        conn = connect(db_path)
-                        batch_id = uuid.uuid4().hex
-                        record_batch(
-                            conn,
-                            batch_id=batch_id,
-                            mode=job.mode,
-                            status=hl.status,
-                            attempts=hl.attempts,
-                            elapsed_ms=hl.elapsed_ms,
-                            worker_count=hl.workers,
-                            started_at=started,
-                            target_count=len(hl.targets),
-                        )
-                        for t in hl.targets:
-                            record_run(
-                                conn,
-                                target_hash=t["hash"],
-                                algorithm=t["algorithm"],
-                                mode=job.mode,
-                                status=t["status"],
-                                attempts=(
-                                    t["match_at_attempt"]
-                                    if t["match_at_attempt"] is not None
-                                    else hl.attempts
-                                ),
-                                elapsed_ms=hl.elapsed_ms,
-                                worker_count=hl.workers,
-                                started_at=started,
-                                matched_plaintext=t["matched_plaintext"],
-                                batch_id=batch_id,
-                            )
-                        conn.close()
-                        job.result["batch_id"] = batch_id[:8]
-                        job.state = hl.status
-                    except HistoryError:
-                        job.error = "The hashlist run finished but could not be recorded in local history."
-                        job.state = hl.status
-                else:
-                    result = run_audit(
-                        job.target_hash,
-                        job.algorithm,
-                        batch_source,
-                        workers=job.workers,
-                        budget=budget,
-                        total_space=total_space,
-                        salt=job.salt,
-                        cancel_event=job.cancel_event,
-                        pause_event=job.pause_event,
-                        resume_state=job.resume_state,
-                        progress_callback=_progress,
-                    )
-                    status = result.status
-                    if status == STATUS_PAUSED:
-                        # Non-terminal: keep temp files and wait for resume.
-                        job.resume_state = result.resume
-                        job.state = STATUS_PAUSED
-                        return
-                    stored_plaintext = None if job.plaintext_withheld else result.matched_plaintext
-                    job.result = {
-                        "status": status,
-                        "attempts": result.attempts,
-                        "elapsed_ms": result.elapsed_ms,
-                        "workers": result.workers,
-                        "matched_plaintext": stored_plaintext,
-                        "target_hash": job.target_hash,
-                        "plaintext_withheld": job.plaintext_withheld,
-                    }
-                    job.attempts = result.attempts
-                    job.elapsed_ms = result.elapsed_ms
-                    # Record the run in local history.
-                    try:
-                        conn = connect(db_path)
-                        record_run(
-                            conn,
-                            target_hash=job.target_hash,
-                            algorithm=job.algorithm,
-                            mode=job.mode,
-                            status=status,
-                            attempts=result.attempts,
-                            elapsed_ms=result.elapsed_ms,
-                            worker_count=result.workers,
-                            started_at=started,
-                            matched_plaintext=(
-                                (None if job.plaintext_withheld else result.matched_plaintext)
-                                if status == STATUS_MATCH
-                                else None
-                            ),
-                            salt=job.salt or None,
-                            plaintext_withheld=job.plaintext_withheld,
-                        )
-                        conn.close()
-                        job.state = status
-                    except HistoryError:
-                        if status == STATUS_MATCH:
-                            job.result = None
-                            job.error = (
-                                "A match was found but it could not be recorded in "
-                                "local history (storage error); nothing is displayed."
-                            )
-                            job.state = "storage_error"
-                        else:
-                            job.error = "The run finished but could not be recorded in local history."
-                            job.state = status
-            except Exception:
-                job.error = "The audit failed unexpectedly; no result was recorded."
-                job.state = "interrupted"
-            finally:
-                if job.state != STATUS_PAUSED:
-                    _remove_temp_file(job.temp_path)
-                    _remove_temp_file(getattr(job, "temp_hashlist", None))
-
-        def _progress(attempts: int, elapsed_ms: int, fraction):
-            with job.lock:
-                job.attempts = attempts
-                job.elapsed_ms = elapsed_ms
-
+    def _reserve_job(job: DashboardJob) -> dict | None:
         with app.config["_job_lock"]:
             active = app.config["_job"]
             if active is not None and active.state in (
@@ -405,15 +272,12 @@ def create_app(
                 _STATE_QUEUED,
                 _STATE_RUNNING,
             ):
-                return None, {
+                return {
                     "error": "Another dashboard audit is already running. "
                     "Cancel it or wait for it to finish."
                 }
             app.config["_job"] = job
-        thread = threading.Thread(target=run_job, daemon=True)
-        job.thread = thread
-        thread.start()
-        return job, None
+        return None
 
     def _remove_temp_file(path: Path | None) -> None:
         if path is not None:
@@ -423,7 +287,7 @@ def create_app(
                 pass
 
     def _save_upload(file_storage) -> tuple[Path | None, dict | None]:
-        """Stream an upload to a temporary file; enforce the 100 MiB limit."""
+        """Stream an upload to a temporary file; enforce the 256 MiB limit."""
         fd, raw_name = tempfile.mkstemp(dir=str(app.config["_upload_dir"]), suffix=".txt")
         temp_path = Path(raw_name)
         try:
@@ -440,151 +304,227 @@ def create_app(
         except ValueError:
             _remove_temp_file(temp_path)
             return None, {
-                "error": "The wordlist upload exceeds the 100 MiB limit."
+                "error": "The wordlist upload exceeds the 256 MiB limit."
             }
         except OSError:
             _remove_temp_file(temp_path)
             return None, {"error": "The wordlist upload could not be stored temporarily."}
         return temp_path, None
 
+    def _resolve_variants(mode: str, rules_name: str):
+        if rules_name == "none":
+            return None
+        if mode != "dictionary":
+            raise AuditPreparationError("Rules apply to dictionary mode only.")
+        try:
+            return resolve_rules_preset(rules_name)
+        except ValueError as exc:
+            raise AuditPreparationError(str(exc)) from exc
+
+    def _prepare_dictionary_source(variants_for) -> CandidateSource:
+        upload = request.files.get("wordlist")
+        if upload is None or not upload.filename:
+            raise AuditPreparationError("Dictionary mode requires a wordlist upload.")
+        temp_path, error = _save_upload(upload)
+        if error is not None:
+            status = 413 if "256 MiB" in error["error"] else 400
+            raise AuditPreparationError(error["error"], status)
+        batch_source = iter_wordlist_batches(temp_path)
+        budget = None
+        if variants_for is not None:
+            budget = DEFAULT_BUDGET
+            batch_source = iter_rule_expanded(batch_source, variants_for, budget)
+        return CandidateSource(batch_source, budget, None, temp_path)
+
+    def _prepare_bruteforce_source() -> CandidateSource:
+        try:
+            alphabet = resolve_charset(request.form.get("charset", ""))
+            min_length = int(request.form.get("min_length", ""))
+            max_length = int(request.form.get("max_length", ""))
+            budget = int(request.form.get("max_candidates", str(DEFAULT_BUDGET)))
+            alphabet, total_space = validate_bruteforce_options(
+                min_length, max_length, budget, alphabet
+            )
+        except (HashInputError, ValueError) as exc:
+            raise AuditPreparationError(
+                "Invalid brute-force settings: charset, length range, "
+                f"and a candidate budget up to {HARD_MAX_BUDGET:,} are required."
+            ) from exc
+        batch_source = iter_bruteforce_batches(
+            alphabet, min_length, max_length, budget
+        )
+        return CandidateSource(batch_source, budget, total_space, None)
+
+    def _prepare_candidate_source(mode: str, rules_name: str) -> CandidateSource:
+        variants_for = _resolve_variants(mode, rules_name)
+        if mode == "dictionary":
+            return _prepare_dictionary_source(variants_for)
+        if mode == "brute-force":
+            return _prepare_bruteforce_source()
+        raise AuditPreparationError("Mode must be 'dictionary' or 'brute-force'.")
+
+    def _prepare_resume_source(job: DashboardJob, params: dict) -> CandidateSource:
+        if params["mode"] == "dictionary":
+            return _prepare_dictionary_resume(job, params)
+        return _prepare_bruteforce_resume(params)
+
+    def _prepare_dictionary_resume(job: DashboardJob, params: dict) -> CandidateSource:
+        wordlist = job.temp_path
+        if wordlist is None or not wordlist.is_file():
+            raise AuditPreparationError(
+                "The uploaded wordlist is gone; re-start the audit."
+            )
+        size = os.path.getsize(str(wordlist))
+        if params.get("wordlist_size") not in (None, size):
+            raise AuditPreparationError(
+                "The wordlist changed since the pause; resume is refused."
+            )
+        return CandidateSource(iter_wordlist_batches(wordlist), None, None, wordlist)
+
+    def _prepare_bruteforce_resume(params: dict) -> CandidateSource:
+        try:
+            alphabet = resolve_charset(params["charset"])
+            min_length = int(params["min_length"])
+            max_length = int(params["max_length"])
+            budget = int(params["max_candidates"])
+            alphabet, total_space = validate_bruteforce_options(
+                min_length, max_length, budget, alphabet
+            )
+        except (HashInputError, ValueError) as exc:
+            raise AuditPreparationError(
+                "Stored brute-force params are invalid."
+            ) from exc
+        batches = iter_bruteforce_batches(alphabet, min_length, max_length, budget)
+        return CandidateSource(batches, budget, total_space, None)
+
+    def _start_resumed_job(job: DashboardJob) -> None:
+        source = _prepare_resume_source(job, job.run_params)
+        request_data = AuditJobRequest(
+            params=job.run_params,
+            mode=job.run_params["mode"],
+            source=source,
+            temp_hashlist=job.temp_hashlist,
+            salt=job.salt,
+            targets=None,
+            plaintext_withheld=job.plaintext_withheld,
+        )
+        job.pause_event.clear()
+        job.resume_state = job.resume_state or {}
+        runner = AuditJobRunner(job, request_data, db_path)
+        job.thread = threading.Thread(target=runner.run, daemon=True)
+        job.thread.start()
+
+    def _read_hashlist_upload() -> tuple[list[dict] | None, Path | None]:
+        hashlist_file = request.files.get("hashlist")
+        if hashlist_file is None or not hashlist_file.filename:
+            return None, None
+        temp_hashlist, error = _save_upload(hashlist_file)
+        if error is not None:
+            raise AuditPreparationError(error["error"])
+        try:
+            return parse_hashlist(temp_hashlist), temp_hashlist
+        except HashInputError as exc:
+            _remove_temp_file(temp_hashlist)
+            raise AuditPreparationError(f"Invalid hashlist: {exc}") from exc
+
+    def _prepare_target_params(
+        targets: list[dict] | None,
+    ) -> tuple[dict, str | None]:
+        if targets is not None:
+            return _prepare_hashlist_params()
+        return _prepare_single_target_params()
+
+    def _prepare_hashlist_params() -> tuple[dict, str | None]:
+        salt = (request.form.get("salt") or "").strip()
+        if salt:
+            raise AuditPreparationError(
+                "--salt is not supported with hashlists (no per-target salt)."
+            )
+        return {"target": "", "algorithm": "hashlist", "workers": 4}, None
+
+    def _prepare_single_target_params() -> tuple[dict, str | None]:
+        algorithm = request.form.get("algorithm", "")
+        target = request.form.get("hash", "")
+        salt = (request.form.get("salt") or "").strip()
+        if not algorithm:
+            raise AuditPreparationError("An algorithm is required.")
+        params, error = _validate_audit_params(
+            algorithm, request.form.get("workers"), target
+        )
+        if error is not None:
+            raise AuditPreparationError(error)
+        params["algorithm"] = algorithm
+        _validate_salt(algorithm, salt)
+        return params, salt or None
+
+    def _validate_salt(algorithm: str, salt: str) -> None:
+        if is_salted(algorithm) and not salt:
+            raise AuditPreparationError(f"Salted format {algorithm} requires a salt value.")
+        if salt and not is_salted(algorithm):
+            raise AuditPreparationError(f"Algorithm {algorithm} does not take a salt.")
+
+    def _candidate_options(rules_name: str) -> dict:
+        return {
+            "charset": request.form.get("charset", ""),
+            "min_length": request.form.get("min_length", ""),
+            "max_length": request.form.get("max_length", ""),
+            "max_candidates": request.form.get(
+                "max_candidates", str(DEFAULT_BUDGET)
+            ),
+            "rules_name": rules_name,
+        }
+
+    def _complete_audit_request(
+        mode: str,
+        targets: list[dict] | None,
+        temp_hashlist: Path | None,
+        plaintext_withheld: bool,
+    ) -> AuditJobRequest:
+        params, salt = _prepare_target_params(targets)
+        rules_name = (request.form.get("rules") or "none").strip()
+        params.update(_candidate_options(rules_name))
+        source = _prepare_candidate_source(mode, rules_name)
+        return AuditJobRequest(
+            params=params,
+            mode=mode,
+            source=source,
+            temp_hashlist=temp_hashlist,
+            salt=salt,
+            targets=targets,
+            plaintext_withheld=plaintext_withheld,
+        )
+
+    def _build_audit_request() -> AuditJobRequest:
+        if request.form.get("acknowledge_retention") != "true":
+            raise AuditPreparationError(
+                "You must acknowledge the local plaintext/hash retention warning "
+                "before starting an audit."
+            )
+        targets, temp_hashlist = _read_hashlist_upload()
+        try:
+            return _complete_audit_request(
+                request.form.get("mode", ""),
+                targets,
+                temp_hashlist,
+                request.form.get("store_plaintext", "true") == "false",
+            )
+        except AuditPreparationError:
+            _remove_temp_file(temp_hashlist)
+            raise
+
     @app.post("/api/audits")
     def start_audit():
         csrf_error = _csrf_protected()
         if csrf_error is not None:
             return csrf_error
-        store_plaintext = request.form.get("store_plaintext", "true") != "false"
-        if not request.form.get("acknowledge_retention") == "true":
-            return jsonify(
-                {
-                    "error": "You must acknowledge the local plaintext/hash "
-                    "retention warning before starting an audit."
-                }
-            ), 400
-
-        mode = request.form.get("mode", "")
-
-        # Optional hashlist upload: one target per line, replaces the single
-        # hash/algorithm fields.
-        hashlist_file = request.files.get("hashlist")
-        targets = None
-        temp_hashlist = None
-        if hashlist_file is not None and hashlist_file.filename:
-            temp_hashlist, error = _save_upload(hashlist_file)
-            if error is not None:
-                return jsonify(error), 400
-            try:
-                targets = parse_hashlist(temp_hashlist)
-            except HashInputError as exc:
-                _remove_temp_file(temp_hashlist)
-                return jsonify({"error": f"Invalid hashlist: {exc}"}), 400
-
-        algorithm = request.form.get("algorithm", "")
-        target = request.form.get("hash", "")
-        salt = (request.form.get("salt") or "").strip()
-        temp_path = None
-        budget = None
-        total_space = None
-        batch_source = None
-
-        if targets is None:
-            if not algorithm:
-                _remove_temp_file(temp_hashlist)
-                return jsonify({"error": "An algorithm is required."}), 400
-            params, error = _validate_audit_params(algorithm, request.form.get("workers"), target)
-            if error is not None:
-                _remove_temp_file(temp_hashlist)
-                return jsonify({"error": error}), 400
-            params["algorithm"] = algorithm
-            if is_salted(algorithm) and not salt:
-                _remove_temp_file(temp_hashlist)
-                return jsonify(
-                    {"error": f"Salted format {algorithm} requires a salt value."}
-                ), 400
-            if salt and not is_salted(algorithm):
-                _remove_temp_file(temp_hashlist)
-                return jsonify(
-                    {"error": f"Algorithm {algorithm} does not take a salt."}
-                ), 400
-        else:
-            params = {"target": "", "algorithm": "hashlist", "workers": 4}
-            if salt:
-                _remove_temp_file(temp_hashlist)
-                return jsonify(
-                    {"error": "--salt is not supported with hashlists (no per-target salt)."}
-                ), 400
-
-        # Optional mutation rules for dictionary mode.
-        rules_name = (request.form.get("rules") or "none").strip()
-        variants_for = None
-        if rules_name != "none":
-            if mode != "dictionary":
-                _remove_temp_file(temp_hashlist)
-                return jsonify({"error": "Rules apply to dictionary mode only."}), 400
-            try:
-                variants_for = resolve_rules_preset(rules_name)
-            except ValueError as exc:
-                _remove_temp_file(temp_hashlist)
-                return jsonify({"error": str(exc)}), 400
-
-        params.update(
-            {
-                "charset": request.form.get("charset", ""),
-                "min_length": request.form.get("min_length", ""),
-                "max_length": request.form.get("max_length", ""),
-                "max_candidates": request.form.get(
-                    "max_candidates", str(DEFAULT_BUDGET)
-                ),
-                "rules_name": rules_name,
-            }
-        )
-
-        if mode == "dictionary":
-            upload = request.files.get("wordlist")
-            if upload is None or not upload.filename:
-                _remove_temp_file(temp_hashlist)
-                return jsonify({"error": "Dictionary mode requires a wordlist upload."}), 400
-            temp_path, error = _save_upload(upload)
-            if error is not None:
-                _remove_temp_file(temp_hashlist)
-                status = 413 if "100 MiB" in error["error"] else 400
-                return jsonify(error), status
-            batch_source = iter_wordlist_batches(temp_path)
-            if variants_for is not None:
-                batch_source = iter_rule_expanded(batch_source, variants_for, budget or DEFAULT_BUDGET)
-                budget = budget or DEFAULT_BUDGET
-                total_space = None
-        elif mode == "brute-force":
-            charset_raw = request.form.get("charset", "")
-            try:
-                alphabet = resolve_charset(charset_raw)
-                min_length = int(request.form.get("min_length", ""))
-                max_length = int(request.form.get("max_length", ""))
-                budget = int(request.form.get("max_candidates", str(DEFAULT_BUDGET)))
-                alphabet, total_space = validate_bruteforce_options(
-                    min_length, max_length, budget, alphabet
-                )
-            except (HashInputError, ValueError):
-                _remove_temp_file(temp_hashlist)
-                return jsonify(
-                    {
-                        "error": "Invalid brute-force settings: charset, length range, "
-                        f"and a candidate budget up to {HARD_MAX_BUDGET:,} are required."
-                    }
-                ), 400
-            batch_source = iter_bruteforce_batches(alphabet, min_length, max_length, budget)
-        else:
-            _remove_temp_file(temp_hashlist)
-            return jsonify(
-                {"error": "Mode must be 'dictionary' or 'brute-force'."}
-            ), 400
-
-        job, error = _start_job(
-            params, mode, batch_source, budget, total_space, temp_path, salt, targets,
-            plaintext_withheld=not store_plaintext,
-        )
+        try:
+            job_request = _build_audit_request()
+        except AuditPreparationError as exc:
+            return jsonify({"error": str(exc)}), exc.status_code
+        job, error = _start_job(job_request)
         if error is not None:
-            _remove_temp_file(temp_path)
-            _remove_temp_file(temp_hashlist)
+            _remove_temp_file(job_request.source.temp_path)
+            _remove_temp_file(job_request.temp_hashlist)
             return jsonify(error), 409
         return jsonify({"job_id": job.job_id, "state": job.state}), 202
 
@@ -649,126 +589,11 @@ def create_app(
             return jsonify({"error": "Unknown job ID."}), 404
         if job.state != STATUS_PAUSED:
             return jsonify({"error": "Only a paused job can be resumed."}), 400
-        params = job.run_params
-        mode = params["mode"]
-        if mode == "dictionary":
-            wordlist = job.temp_path
-            if wordlist is None or not wordlist.is_file():
-                return jsonify(
-                    {"error": "The uploaded wordlist is gone; re-start the audit."}
-                ), 400
-            size = os.path.getsize(str(wordlist))
-            if params.get("wordlist_size") not in (None, size):
-                return jsonify(
-                    {"error": "The wordlist changed since the pause; resume is refused."}
-                ), 400
-            batch_source = iter_wordlist_batches(wordlist)
-        else:
-            try:
-                alphabet = resolve_charset(params["charset"])
-                min_length = int(params["min_length"])
-                max_length = int(params["max_length"])
-                budget = int(params["max_candidates"])
-                alphabet, total_space = validate_bruteforce_options(
-                    min_length, max_length, budget, alphabet
-                )
-            except (HashInputError, ValueError):
-                return jsonify({"error": "Stored brute-force params are invalid."}), 400
-            batch_source = iter_bruteforce_batches(alphabet, min_length, max_length, budget)
-
-        job.pause_event.clear()
-        job.resume_state = job.resume_state or {}
-        thread = threading.Thread(target=_run_resumed, daemon=True)
-        job.thread = thread
-        thread.start()
-        return jsonify({"job_id": job.job_id, "state": _STATE_RUNNING, "resumed": True})
-
-    def _run_resumed():
-        """Re-run the audit loop for a paused single-target job."""
-        job = app.config["_job"]
-        if job is None or job.resume_state is None:
-            return
-        params = job.run_params
-        mode = params["mode"]
-        if mode == "dictionary":
-            batch_source = iter_wordlist_batches(job.temp_path)
-            budget = None
-            total_space = None
-        else:
-            alphabet = resolve_charset(params["charset"])
-            min_length = int(params["min_length"])
-            max_length = int(params["max_length"])
-            budget = int(params["max_candidates"])
-            alphabet, total_space = validate_bruteforce_options(
-                min_length, max_length, budget, alphabet
-            )
-            batch_source = iter_bruteforce_batches(alphabet, min_length, max_length, budget)
-        job.state = _STATE_RUNNING
-        started = utc_now()
-        progress_at = [0.0]
-
-        def resumed_progress(attempts: int, elapsed_ms: int, fraction):
-            with job.lock:
-                job.attempts = attempts
-                job.elapsed_ms = elapsed_ms
-
         try:
-            result = run_audit(
-                job.target_hash,
-                job.algorithm,
-                batch_source,
-                workers=job.workers,
-                budget=budget,
-                total_space=total_space,
-                salt=job.salt,
-                cancel_event=job.cancel_event,
-                resume_state=job.resume_state,
-                progress_callback=resumed_progress,
-            )
-            if result.status == STATUS_PAUSED:
-                job.resume_state = result.resume
-                job.state = STATUS_PAUSED
-                return
-            status = result.status
-            job.result = {
-                "status": status,
-                "attempts": result.attempts,
-                "elapsed_ms": result.elapsed_ms,
-                "workers": result.workers,
-                "matched_plaintext": result.matched_plaintext,
-                "target_hash": job.target_hash,
-            }
-            job.attempts = result.attempts
-            job.elapsed_ms = result.elapsed_ms
-            try:
-                conn = connect(db_path)
-                record_run(
-                    conn,
-                    target_hash=job.target_hash,
-                    algorithm=job.algorithm,
-                    mode=mode,
-                    status=status,
-                    attempts=result.attempts,
-                    elapsed_ms=result.elapsed_ms,
-                    worker_count=result.workers,
-                    started_at=started,
-                    matched_plaintext=(
-                        result.matched_plaintext if status == STATUS_MATCH else None
-                    ),
-                    salt=job.salt,
-                )
-                conn.close()
-                job.state = status
-            except HistoryError:
-                job.error = "The resumed run finished but could not be recorded in local history."
-                job.state = status
-        except Exception:
-            job.error = "The resumed audit failed unexpectedly; no result was recorded."
-            job.state = "interrupted"
-        finally:
-            if job.state != STATUS_PAUSED:
-                _remove_temp_file(job.temp_path)
-                _remove_temp_file(getattr(job, "temp_hashlist", None))
+            _start_resumed_job(job)
+        except AuditPreparationError as exc:
+            return jsonify({"error": str(exc)}), exc.status_code
+        return jsonify({"job_id": job.job_id, "state": _STATE_RUNNING, "resumed": True})
 
     # --- history ---------------------------------------------------------
 

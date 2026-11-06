@@ -109,15 +109,15 @@ async function apiFetch(path, options = {}) {
   return payload;
 }
 
-function CardHeader({ icon, title, right }) {
+function CardHeader({ icon, title, right, id }) {
   return (
     <div className="card-header flex items-center justify-between px-5 py-3">
-      <div className="flex items-center gap-2.5 text-sm font-bold text-text">
+      <h2 id={id} className="flex items-center gap-2.5 text-sm font-bold text-text">
         <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-accent/20 bg-accent/10 text-accent">
           {icon}
         </span>
         {title}
-      </div>
+      </h2>
       {right}
     </div>
   );
@@ -292,7 +292,7 @@ export default function AuditDashboard() {
       form.append("store_plaintext", storePlaintext ? "true" : "false");
       if (mode === "dictionary") {
         if (!wordlistFile)
-          throw new Error("Select a UTF-8 wordlist file to upload (max 100 MiB).");
+          throw new Error("Select a UTF-8 wordlist file to upload (max 256 MiB).");
         form.append("wordlist", wordlistFile);
       } else {
         const presetText = charsetPresets.join(",");
@@ -490,7 +490,7 @@ export default function AuditDashboard() {
 
       {/* Target hash */}
       <section className="card" aria-labelledby="step-hash">
-        <CardHeader icon={<Search size={15} />} title="Target hash" />
+        <CardHeader id="step-hash" icon={<Search size={15} />} title="Target hash" />
         <div className="px-5 py-4">
           <div className="flex flex-col gap-2 sm:flex-row">
             <div className="relative flex-1">
@@ -604,6 +604,7 @@ export default function AuditDashboard() {
       {/* Audit mode */}
       <section className="card" aria-labelledby="step-mode">
         <CardHeader
+          id="step-mode"
           icon={mode === "dictionary" ? <FileText size={15} /> : <Zap size={15} />}
           title="Audit mode"
           right={
@@ -674,7 +675,7 @@ export default function AuditDashboard() {
           {mode === "dictionary" ? (
             <div>
               <label className={labelClass} htmlFor="wordlist">
-                Wordlist (UTF-8, up to 100 MiB)
+                Wordlist (UTF-8, up to 256 MiB)
               </label>
               <label
                 htmlFor="wordlist"
@@ -842,7 +843,7 @@ export default function AuditDashboard() {
 
       {/* Acknowledgement + run */}
       <section className="card" aria-labelledby="step-run">
-        <CardHeader icon={<Play size={15} />} title="Run" />
+        <CardHeader id="step-run" icon={<Play size={15} />} title="Run" />
         <div className="px-5 py-4">
           <label className="flex cursor-pointer items-start gap-3 text-sm leading-relaxed text-text-muted">
             <input
@@ -907,6 +908,7 @@ export default function AuditDashboard() {
       {job && (
         <section className="card" aria-labelledby="step-progress">
           <CardHeader
+            id="step-progress"
             icon={<Zap size={15} />}
             title="Progress and result"
             right={
@@ -971,11 +973,15 @@ export default function AuditDashboard() {
               <div className="mt-4 rounded-2xl border border-success/30 bg-success/10 px-4 py-3">
                 <p className="flex items-center gap-2 text-sm font-bold text-success">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success"></span>
-                  Match — sensitive data stored locally
+                  {job.result.plaintext_withheld
+                    ? "Match — plaintext withheld"
+                    : "Match — sensitive data stored locally"}
                 </p>
-                <p className="mono mt-2 break-all text-sm text-text">
-                  Plaintext: {job.result.matched_plaintext}
-                </p>
+                {!job.result.plaintext_withheld && (
+                  <p className="mono mt-2 break-all text-sm text-text">
+                    Plaintext: {job.result.matched_plaintext}
+                  </p>
+                )}
                 <p className="mono mt-1 break-all text-sm text-text-muted">
                   {job.result.target_hash}
                 </p>
@@ -1000,6 +1006,11 @@ export default function AuditDashboard() {
                     batch {job.result.batch_id}
                   </span>
                 </p>
+                {job.result.plaintext_withheld && (
+                  <p className="mb-2 text-xs text-warning">
+                    Plaintext withheld from local history at your request.
+                  </p>
+                )}
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead>
@@ -1035,7 +1046,9 @@ export default function AuditDashboard() {
                               : "—"}
                           </td>
                           <td className="py-2">
-                            {t.matched_plaintext === null ? (
+                            {t.plaintext_withheld && t.status === "match" ? (
+                              "Withheld"
+                            ) : t.matched_plaintext === null ? (
                               "—"
                             ) : (
                               <span className="text-success">{t.matched_plaintext}</span>
@@ -1065,6 +1078,7 @@ export default function AuditDashboard() {
       {/* History */}
       <section className="card" aria-labelledby="step-history">
         <CardHeader
+          id="step-history"
           icon={<History size={15} />}
           title="Audit history"
           right={
@@ -1196,7 +1210,9 @@ export default function AuditDashboard() {
                       <td className="py-2 pr-4 text-right">{(record.elapsed_ms / 1000).toFixed(1)}s</td>
                       <td className="py-2 pr-4">{record.worker_count}</td>
                       <td className="py-2">
-                        {record.matched_plaintext === null ? (
+                        {record.plaintext_withheld && record.status === "match" ? (
+                          <span className="text-warning">Withheld</span>
+                        ) : record.matched_plaintext === null ? (
                           "—"
                         ) : record.matched_plaintext === "<encrypted>" ? (
                           <span className="text-text-muted">{record.matched_plaintext}</span>
