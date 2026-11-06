@@ -108,21 +108,24 @@ class AuditJobRunner:
 
     def _run_hashlist(self, started_at: str) -> None:
         outcome = self._execute_hashlist()
-        self.job.result = hashlist_job_result(self.job, outcome)
+        job_result = hashlist_job_result(self.job, outcome)
         self.job.attempts = outcome.attempts
         self.job.elapsed_ms = outcome.elapsed_ms
-        self._record_hashlist(outcome, started_at)
+        self._record_hashlist(outcome, started_at, job_result)
 
-    def _record_hashlist(self, outcome, started_at: str) -> None:
+    def _record_hashlist(self, outcome, started_at: str, job_result: dict) -> None:
         try:
             batch_id = self._persist_hashlist(outcome, started_at)
-            self.job.result["batch_id"] = batch_id[:8]
-            self.job.state = outcome.status
         except HistoryError:
+            self.job.result = job_result
             self.job.error = (
                 "The hashlist run finished but could not be recorded in local history."
             )
             self.job.state = outcome.status
+            return
+        job_result["batch_id"] = batch_id[:8]
+        self.job.result = job_result
+        self.job.state = outcome.status
 
     def _persist_hashlist(self, outcome, started_at: str) -> str:
         conn = connect(self.db_path)
@@ -192,10 +195,10 @@ class AuditJobRunner:
             self.job.resume_state = outcome.resume
             self.job.state = STATUS_PAUSED
             return
-        self.job.result = single_target_job_result(self.job, outcome)
+        job_result = single_target_job_result(self.job, outcome)
         self.job.attempts = outcome.attempts
         self.job.elapsed_ms = outcome.elapsed_ms
-        self._record_single_target(outcome, started_at)
+        self._record_single_target(outcome, started_at, job_result)
 
     def _execute_single_target(self):
         source = self.request.source
@@ -213,12 +216,18 @@ class AuditJobRunner:
             progress_callback=self._progress,
         )
 
-    def _record_single_target(self, outcome, started_at: str) -> None:
+    def _record_single_target(self, outcome, started_at: str, job_result: dict) -> None:
         try:
             self._persist_single_target(outcome, started_at)
-            self.job.state = outcome.status
         except HistoryError:
+            if outcome.status == STATUS_MATCH:
+                self._set_single_target_storage_error(outcome.status)
+                return
+            self.job.result = job_result
             self._set_single_target_storage_error(outcome.status)
+            return
+        self.job.result = job_result
+        self.job.state = outcome.status
 
     def _persist_single_target(self, outcome, started_at: str) -> None:
         conn = connect(self.db_path)
@@ -229,7 +238,6 @@ class AuditJobRunner:
 
     def _set_single_target_storage_error(self, status: str) -> None:
         if status == STATUS_MATCH:
-            self.job.result = None
             self.job.error = (
                 "A match was found but it could not be recorded in "
                 "local history (storage error); nothing is displayed."
