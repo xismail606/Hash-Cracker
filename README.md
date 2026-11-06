@@ -6,7 +6,7 @@
     width="100%"
   />
 </div>
-
+ 
 # Hash Cracker
 
 [![CI](https://github.com/xismail606/hash-cracker/actions/workflows/ci.yml/badge.svg)](https://github.com/xismail606/hash-cracker/actions/workflows/ci.yml)
