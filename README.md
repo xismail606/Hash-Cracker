@@ -29,23 +29,23 @@ Both interfaces call the same Python audit engine. The engine supports:
 
 ## Supported Hashes
 
-| Algorithm | Format                     | Support    |
-| --------- | -------------------------- | ---------- |
-| LM        | 16 hexadecimal characters  | Yes        |
-| MD5       | 32 hexadecimal characters  | Yes        |
-| NTLM      | 32 hexadecimal characters  | Yes        |
-| MD4       | 32 hexadecimal characters  | Yes        |
-| SHA-1     | 40 hexadecimal characters  | Yes        |
-| SHA-224   | 56 hexadecimal characters  | Yes        |
-| SHA-256   | 64 hexadecimal characters  | Yes        |
-| SHA-384   | 96 hexadecimal characters  | Yes        |
-| SHA-512   | 128 hexadecimal characters | Yes        |
-| RIPEMD-160 | 40 hexadecimal characters | Yes (pure-Python, hashcat 600) |
-| SHA-512/224 | 56 hexadecimal characters | Yes        |
-| SHA-512/256 | 64 hexadecimal characters | Yes        |
-| bcrypt    | full hash string ($2…)      | Yes (slow — see note) |
-| sha512crypt | full hash string ($6$…)   | Yes (slow — see note) |
-| phpass    | full hash string ($P$…)     | Yes (slow — see note) |
+| Algorithm   | Format                     | Support                        |
+| ----------- | -------------------------- | ------------------------------ |
+| LM          | 16 hexadecimal characters  | Yes                            |
+| MD5         | 32 hexadecimal characters  | Yes                            |
+| NTLM        | 32 hexadecimal characters  | Yes                            |
+| MD4         | 32 hexadecimal characters  | Yes                            |
+| SHA-1       | 40 hexadecimal characters  | Yes                            |
+| SHA-224     | 56 hexadecimal characters  | Yes                            |
+| SHA-256     | 64 hexadecimal characters  | Yes                            |
+| SHA-384     | 96 hexadecimal characters  | Yes                            |
+| SHA-512     | 128 hexadecimal characters | Yes                            |
+| RIPEMD-160  | 40 hexadecimal characters  | Yes (pure-Python, hashcat 600) |
+| SHA-512/224 | 56 hexadecimal characters  | Yes                            |
+| SHA-512/256 | 64 hexadecimal characters  | Yes                            |
+| bcrypt      | full hash string ($2…)     | Yes (slow — see note)          |
+| sha512crypt | full hash string ($6$…)    | Yes (slow — see note)          |
+| phpass      | full hash string ($P$…)    | Yes (slow — see note)          |
 
 Hash length and character structure help identify a format, but do not always prove the algorithm. MD5, NTLM, and MD4 share the same 32-character hexadecimal shape. The tool reports all three and requires an explicit selection. NTLM uses Passlib's `nthash`; LM uses Passlib's `lmhash` and compares only the first 8-byte DES block (16 hex), matching the format hashcat uses — a 16-hex LM target identifies passwords by their first seven characters. MD5, SHA-1, SHA-224, SHA-256, SHA-384, and SHA-512 use Python's `hashlib`; MD4 reuses the pure-Python MD4 implementation from the NTLM fallback (validated against RFC 1320 test vectors). RIPEMD-160 is a dependency-free pure-Python implementation validated against the official test vectors. Adaptive formats (bcrypt, sha512crypt, phpass) verify against the full stored hash string via Passlib and are extremely slow — keep their brute-force budgets small (the `benchmark` command reports real per-algorithm throughput). Eight salted fast-hash formats are also supported (`md5($pass.$salt)`, `md5($salt.$pass)`, `sha1($pass.$salt)`, `sha1($salt.$pass)`, `sha256($pass.$salt)`, `sha256($salt.$pass)`, `sha512($pass.$salt)`, `sha512($salt.$pass)`) — pass the known salt with `--salt` (CLI) or the dashboard salt field.
 
@@ -72,19 +72,19 @@ Hash length and character structure help identify a format, but do not always pr
 
 ## Technology Stack
 
-| Technology           | Role                                                                                                      |
-| -------------------- | --------------------------------------------------------------------------------------------------------- |
-| **Python 3.11+**     | Hash analysis, audit engine, candidate processing, multiprocessing, CLI, Flask backend, and SQLite access |
-| **`hashlib`**        | MD5, SHA-1/224/256/384/512, SHA-512/224, and SHA-512/256 candidate hashing                               |
-| **Passlib**          | NTLM and LM candidate hashing; bcrypt, sha512crypt, and phpass verification                              |
-| **Pure-Python MD4 / RIPEMD-160** | Dependency-free fallback implementations validated against official test vectors             |
-| **Flask**            | Local web server and JSON API                                                                             |
-| **Astro**            | Build the dashboard as static assets                                                                      |
-| **React**            | Interactive hash, audit, progress, and result components                                                  |
-| **JavaScript**       | Browser-side API requests and progress updates                                                            |
-| **Tailwind CSS**     | Dashboard styling                                                                                         |
-| **SQLite**           | Local audit history and result reporting                                                                  |
-| **Node.js/npm**      | Frontend dependency installation and build                                                                |
+| Technology                       | Role                                                                                                      |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Python 3.11+**                 | Hash analysis, audit engine, candidate processing, multiprocessing, CLI, Flask backend, and SQLite access |
+| **`hashlib`**                    | MD5, SHA-1/224/256/384/512, SHA-512/224, and SHA-512/256 candidate hashing                                |
+| **Passlib**                      | NTLM and LM candidate hashing; bcrypt, sha512crypt, and phpass verification                               |
+| **Pure-Python MD4 / RIPEMD-160** | Dependency-free fallback implementations validated against official test vectors                          |
+| **Flask**                        | Local web server and JSON API                                                                             |
+| **Astro**                        | Build the dashboard as static assets                                                                      |
+| **React**                        | Interactive hash, audit, progress, and result components                                                  |
+| **JavaScript**                   | Browser-side API requests and progress updates                                                            |
+| **Tailwind CSS**                 | Dashboard styling                                                                                         |
+| **SQLite**                       | Local audit history and result reporting                                                                  |
+| **Node.js/npm**                  | Frontend dependency installation and build                                                                |
 
 ### Go and Python
 
@@ -309,7 +309,7 @@ contains **43 tasks (T034–T076)**, each mapped to files and dependencies.
 | T017 | Warn and require acknowledgement before storing successful plaintext/hash pairs.                                           |
 | T018 | Implement loopback-only Flask serving and CSRF protection.                                                                 |
 | T019 | Add web job start, status, and cancellation routes.                                                                        |
-| T020 | Validate wordlist upload limits and clean up temporary files.                                                               |
+| T020 | Validate wordlist upload limits and clean up temporary files.                                                              |
 | T021 | Set up Astro, React, Tailwind, and frontend build scripts.                                                                 |
 | T022 | Build dashboard controls for hash identification, algorithm ambiguity, mode, charset, limits, and workers.                 |
 | T023 | Connect audit requests, progress polling, cancellation, plaintext/hash results, and the pre-run retention acknowledgement. |
@@ -331,10 +331,10 @@ contains **43 tasks (T034–T076)**, each mapped to files and dependencies.
 
 ### Phase 5: Salted Fast Hashes — T034–T042 (v2)
 
-| Task | Work                                                                                                  |
-| ---- | ----------------------------------------------------------------------------------------------------- |
+| Task | Work                                                                                                   |
+| ---- | ------------------------------------------------------------------------------------------------------ |
 | T034 | Add the `SALTED_ALGORITHMS` registry (name → base digest, salt position) and salted-format validation. |
-| T035 | Add position-aware salted digest adapters.                                                            |
+| T035 | Add position-aware salted digest adapters.                                                             |
 | T036 | Pass the run salt through `run_audit` and the comparison worker.                                       |
 | T037 | Add `--salt` to the audit command and wire it through CLI validation.                                  |
 | T038 | Add the salt field to `POST /api/audits` and dashboard validation.                                     |
@@ -345,8 +345,8 @@ contains **43 tasks (T034–T076)**, each mapped to files and dependencies.
 
 ### Phase 6: Hashlist Multi-Target Audits — T043–T051 (v2)
 
-| Task | Work                                                                                                        |
-| ---- | ----------------------------------------------------------------------------------------------------------- |
+| Task | Work                                                                                                          |
+| ---- | ------------------------------------------------------------------------------------------------------------- |
 | T043 | Add hashlist parsing (`algorithm:hash` optional prefix, skip blanks and `#` comments, whole-file validation). |
 | T044 | Implement the multi-target worker (targets dict keyed by digest, single hashing pass, per-target matches).    |
 | T045 | Add `--hashlist PATH` to the audit command (mutually exclusive with a positional hash).                       |
@@ -359,8 +359,8 @@ contains **43 tasks (T034–T076)**, each mapped to files and dependencies.
 
 ### Phase 7: Rules & Mutations — T052–T057 (v2)
 
-| Task | Work                                                                                  |
-| ---- | ------------------------------------------------------------------------------------- |
+| Task | Work                                                                                                  |
+| ---- | ----------------------------------------------------------------------------------------------------- |
 | T052 | Create `rules.py` with the preset registry (capitalize, upper, lower, leetspeak, digit/year appends). |
 | T053 | Wrap dictionary batch sources with rule expansion (budget counts expanded candidates).                |
 | T054 | Add `--rules PRESET` to the audit command (dictionary mode).                                          |
@@ -370,44 +370,42 @@ contains **43 tasks (T034–T076)**, each mapped to files and dependencies.
 
 ### Phase 8: Tooling & UX — T058–T066 (v2)
 
-| Task | Work                                                                                                  |
-| ---- | ------------------------------------------------------------------------------------------------------ |
-| T058 | Create `benchmark.py` (wall-clock slice per algorithm) and the `benchmark` CLI command.                 |
-| T059 | Implement pause/resume (offset checkpoint, wordlist byte-position validation, pool release).            |
-| T060 | Add the pause and resume API routes.                                                                    |
-| T061 | Add the pause/resume button state machine in the dashboard.                                             |
-| T062 | Add `GET /api/export?format=csv\|json` and dashboard download buttons.                                  |
-| T063 | Compute and display ETA (attempts/second × remaining) in CLI progress and the dashboard.                |
-| T064 | Add the `--no-store-plaintext` CLI flag and dashboard checkbox (withheld marker in history).            |
-| T065 | Make Auto-fit LM-aware (upper-only alphabet suggestion when the identified algorithm is LM).            |
-| T066 | Update the CLI and web contracts for all phase-8 features.                                              |
+| Task | Work                                                                                         |
+| ---- | -------------------------------------------------------------------------------------------- |
+| T058 | Create `benchmark.py` (wall-clock slice per algorithm) and the `benchmark` CLI command.      |
+| T059 | Implement pause/resume (offset checkpoint, wordlist byte-position validation, pool release). |
+| T060 | Add the pause and resume API routes.                                                         |
+| T061 | Add the pause/resume button state machine in the dashboard.                                  |
+| T062 | Add `GET /api/export?format=csv\|json` and dashboard download buttons.                       |
+| T063 | Compute and display ETA (attempts/second × remaining) in CLI progress and the dashboard.     |
+| T064 | Add the `--no-store-plaintext` CLI flag and dashboard checkbox (withheld marker in history). |
+| T065 | Make Auto-fit LM-aware (upper-only alphabet suggestion when the identified algorithm is LM). |
+| T066 | Update the CLI and web contracts for all phase-8 features.                                   |
 
 ### Phase 9: Security & Quality — T067–T073 (v2)
 
-| Task | Work                                                                                                          |
-| ---- | -------------------------------------------------------------------------------------------------------------- |
+| Task | Work                                                                                                                                          |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | T067 | Write `tests/test_algorithms.py` (shape mapping, ambiguity, normalization) and `tests/test_hashing.py` (RFC 1320 vectors + hashcat examples). |
-| T068 | Write `tests/test_bruteforce.py` (charset resolution, budget boundaries) and `tests/test_candidates.py` (chunking, hashlist parsing).        |
-| T069 | Write `tests/test_engine.py` — golden tests for attempt accounting.                                                            |
-| T070 | Write `tests/test_web.py` (Flask test client: session/CSRF, identify, audit, uploads, history, pause/resume, export).          |
-| T071 | Add the GitHub Actions CI workflow running pytest on Windows and Ubuntu, and the `pytest` dev dependency.                       |
-| T072 | Add optional at-rest encryption of stored plaintexts (Fernet, passphrase-derived key, unlock in CLI and dashboard).             |
-| T073 | Update the README and quickstart for the test suite, CI badge, and encryption mode.                                             |
+| T068 | Write `tests/test_bruteforce.py` (charset resolution, budget boundaries) and `tests/test_candidates.py` (chunking, hashlist parsing).         |
+| T069 | Write `tests/test_engine.py` — golden tests for attempt accounting.                                                                           |
+| T070 | Write `tests/test_web.py` (Flask test client: session/CSRF, identify, audit, uploads, history, pause/resume, export).                         |
+| T071 | Add the GitHub Actions CI workflow running pytest on Windows and Ubuntu, and the `pytest` dev dependency.                                     |
+| T072 | Add optional at-rest encryption of stored plaintexts (Fernet, passphrase-derived key, unlock in CLI and dashboard).                           |
+| T073 | Update the README and quickstart for the test suite, CI badge, and encryption mode.                                                           |
 
 ### Phase 10: Research — T074–T076 (v2, quarantined)
 
 Research tasks landed only after hashcat-example validation and phase-9 test
 coverage; rejected candidates are documented in the [v2 plan](specs/002-feature-expansion/plan.md).
 
-| Task | Work                                                                                                     |
-| ---- | ---------------------------------------------------------------------------------------------------------- |
-| T074 | Research RIPEMD-160 (pure-Python implementation, 40-hex, adds ambiguity with SHA-1) — merged with validation. |
+| Task | Work                                                                                                            |
+| ---- | --------------------------------------------------------------------------------------------------------------- |
+| T074 | Research RIPEMD-160 (pure-Python implementation, 40-hex, adds ambiguity with SHA-1) — merged with validation.   |
 | T075 | Research adaptive formats (bcrypt, sha512crypt, phpass via Passlib) with slow-format budget semantics — merged. |
-| T076 | Research SHA-512/224 and SHA-512/256 (`hashlib.new` availability check) — merged.                              |
+| T076 | Research SHA-512/224 and SHA-512/256 (`hashlib.new` availability check) — merged.                               |
 
 ## Repository Layout (implemented)
-
-
 
 ```text
 README.md
@@ -525,7 +523,7 @@ The `benchmark` command measures per-algorithm candidates per second on the curr
 
 ## License
 
-The repository includes the [MIT License](LICENSE.md). Replace `[Copyright Holder]` in that file with the copyright owner's name or organization before publication.
+The repository includes the [MIT License](LICENSE.md). Replace `Team-606` in that file with the copyright owner's name or organization before publication.
 
 ## Changelog
 
@@ -553,6 +551,7 @@ v2 expansion documents:
 ## Feature Expansion (v2) — Phases 5–10, Implemented
 
 The v2 round planned in [specs/002-feature-expansion/](specs/002-feature-expansion/) is complete: salted fast-hash formats, hashlist multi-target audits, rule-based mutations, tooling/UX upgrades (benchmark, pause/resume, dashboard export, ETA, plaintext withholding), a pytest suite with CI, optional plaintext encryption at rest, and the researched formats (RIPEMD-160, adaptive bcrypt/sha512crypt/phpass, SHA-512/224 and SHA-512/256). See its [spec](specs/002-feature-expansion/spec.md), [plan](specs/002-feature-expansion/plan.md), and [task breakdown](specs/002-feature-expansion/tasks.md) (T034–T076).
+
   <!-- ===================== FOOTER ===================== -->
   <div align="center">
     <img 
