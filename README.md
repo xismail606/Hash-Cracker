@@ -13,7 +13,7 @@
 
 A Python-based offline hash-cracking and password-auditing project. It identifies supported hash formats, compares a target against either a supplied dictionary or a bounded brute-force search, provides both a CLI and local web dashboard, and stores audit results in SQLite.
 
-> **Project status: Implemented.** All 33 v1 tasks and the v2 feature expansion (salted formats, hashlists, mutation rules, benchmark, pause/resume, dashboard export/ETA, plaintext withholding/encryption, RIPEMD-160 and adaptive formats) are complete, backed by the pytest suite and CI. See the [quickstart](specs/001-offline-password-audit/quickstart.md) for setup and validated scenarios.
+> **Project status: Implemented.** All 33 v1 tasks and the v2 feature expansion (salted formats, hashlists, mutation rules, benchmark, pause/resume, dashboard export/ETA, plaintext withholding/encryption, RIPEMD-160 and adaptive formats) are complete, backed by a 145-test pytest suite and CI. See the [quickstart](specs/001-offline-password-audit/quickstart.md) for setup and validated scenarios.
 
 ## Project Overview
 
@@ -512,14 +512,14 @@ After setup, `python -m password_audit identify ...`, `audit ...`, `history`, `e
 
 ## Performance and Validation
 
-The `benchmark` command measures per-algorithm candidates per second on the current machine so budgets can be sized accordingly. Brute-force search is bounded by its configured candidate budget. The pytest suite (`tests/`) checks identification, dictionary and brute-force matching, hashlists, rules, progress accounting, pause/resume, export, plaintext withholding, encryption, and history behavior with synthetic hashes and candidate data.
+The `benchmark` command measures per-algorithm candidates per second on the current machine so budgets can be sized accordingly. Brute-force search is bounded by its configured candidate budget. The pytest suite (`tests/`, 145 tests) checks identification, dictionary and brute-force matching, hashlists, rules, progress accounting, pause/resume, export, plaintext withholding, encryption, and history behavior with synthetic hashes and candidate data.
 
 ## Current Status
 
 - The specification, design documents, contracts, and both task plans are complete; all 33 v1 tasks and the v2 expansion tasks (T034–T076) are implemented and marked done in their `tasks.md` files.
 - The Python package (`src/password_audit/`) provides hash identification (including salted, adaptive, RIPEMD-160, and SHA-512/224+/256 formats), dictionary/brute-force/hashlist auditing, mutation rules, multiprocessing, the benchmark command, pause/resume, the CLI, the Flask API, and SQLite history with optional at-rest encryption.
 - The Astro/React/Tailwind dashboard builds into `src/password_audit/static/` and is served by the loopback Flask server; it adds pause/resume, ETA, CSV/JSON export, plaintext-withholding and encryption controls, and history unlock.
-- Behavior is checked by the pytest suite running on Windows and Ubuntu via GitHub Actions CI.
+- Behavior is checked by the 145-test pytest suite running on Windows and Ubuntu via GitHub Actions CI.
 
 ## License
 
