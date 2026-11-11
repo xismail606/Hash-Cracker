@@ -17,8 +17,8 @@ import ParticleBackground from "../components/ParticleBackground.jsx";
       name="description"
       content="Local, offline password-hash auditing with dictionary and bounded brute-force modes, live progress, and SQLite history."
     />
-    <meta name="theme-color" content="#030303" id="meta-theme-color" />
-    <!-- Theme init before paint to prevent FOUC (same approach as CyberSec Arsenal) -->
+    <meta name="theme-color" content="#08090c" id="meta-theme-color" />
+    <!-- Theme init before paint to prevent FOUC (same approach as the Hash Cracker webpage) -->
     <script is:inline>
       (function () {
         const storedTheme = localStorage.getItem("theme");
@@ -27,7 +27,7 @@ import ParticleBackground from "../components/ParticleBackground.jsx";
           (!storedTheme && !window.matchMedia("(prefers-color-scheme: light)").matches);
         document.documentElement.setAttribute("data-theme", isDark ? "dark" : "light");
         const metaTheme = document.getElementById("meta-theme-color");
-        if (metaTheme) metaTheme.setAttribute("content", isDark ? "#030303" : "#f5f1ea");
+        if (metaTheme) metaTheme.setAttribute("content", isDark ? "#08090c" : "#f2f4f8");
       })();
     </script>
   </head>

@@ -18,9 +18,9 @@ import {
 // loopback Flask API; state-changing requests carry the CSRF token issued by
 // GET /api/session.
 //
-// Visual system adopted from the CyberSec Arsenal site: emerald on deep
-// black with a glowing radial gradient, translucent rounded cards, glow
-// accent buttons, Geist Sans/Mono, dark/light theme toggle.
+// Visual system adopted from the Hash Cracker webpage landing site: soft
+// blue on blue-tinted near black with a glowing radial gradient, translucent
+// rounded cards, glow accent buttons, Geist Sans/Mono, dark/light theme toggle.
 
 const ALGORITHM_LABELS = {
   md5: "MD5",

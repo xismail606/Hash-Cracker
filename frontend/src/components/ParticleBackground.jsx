@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
-// Faithful port of the CyberSec Arsenal HeroBackground: drifting emerald
+// Faithful port of the site HeroBackground (palette from the Hash Cracker
+// webpage landing): drifting soft-blue
 // particles with twinkling, depth-layered parallax, smooth mouse repulsion,
 // constellation links, and a depth glow for the closest particles. Renders a
 // static field under prefers-reduced-motion, pauses when the tab is hidden,
@@ -29,8 +30,8 @@ export default function ParticleBackground({ density = 1 } = {}) {
       const isLight =
         document.documentElement.getAttribute("data-theme") === "light";
       return isLight
-        ? { dot: "4,120,87", line: "4,120,87", glow: 0.9 }
-        : { dot: "16,185,129", line: "16,185,129", glow: 0.8 };
+        ? { dot: "77,107,254", line: "77,107,254", glow: 0.9 }
+        : { dot: "142,175,255", line: "142,175,255", glow: 0.8 };
     };
     let palette = themeColors();
 

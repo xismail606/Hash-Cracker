@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { GitBranch, Sun, Moon, Terminal, History } from "lucide-react";
 import ChangelogModal from "./ChangelogModal";
 
-// Fixed floating capsule navbar, adapted from the CyberSec Arsenal Navbar:
+// Fixed floating capsule navbar, adapted from the Hash Cracker webpage landing navbar:
 // logo pill on the left, action pill on the right, hides on scroll down.
 export default function Navbar() {
   const [theme, setTheme] = useState(
@@ -36,7 +36,7 @@ export default function Navbar() {
     root.setAttribute("data-theme", next);
     localStorage.setItem("theme", next);
     const meta = document.getElementById("meta-theme-color");
-    if (meta) meta.setAttribute("content", next === "dark" ? "#030303" : "#f5f1ea");
+    if (meta) meta.setAttribute("content", next === "dark" ? "#08090c" : "#f2f4f8");
   };
 
   return (

@@ -1,10 +1,11 @@
 @import "tailwindcss";
 
-/* Design system adopted from the CyberSec Arsenal site (D:\Methodology -react):
-   dark-first emerald-on-deep-black with a glowing top radial gradient, Geist
-   Sans/Mono, rounded translucent cards, glow accent buttons, light theme
-   override. Fonts are self-hosted (public/fonts) — the dashboard makes no
-   external requests at runtime. */
+/* Design system adopted from the Hash Cracker webpage landing site
+   (D:\Hash Cracker webpage, Harness-inspired): dark-first soft-blue on
+   blue-tinted near-black (#08090c), Geist Sans/Mono, rounded translucent
+   cards, glow accent buttons, light theme override in the same cool
+   blue-gray family. Fonts are self-hosted (public/fonts) — the dashboard
+   makes no external requests at runtime. */
 
 @font-face {
   font-family: "Geist Sans";
@@ -22,40 +23,42 @@
   src: url("/fonts/geist-mono-latin.woff2") format("woff2");
 }
 
-/* Default/Dark theme: Green & deep black with glowing top radial gradient */
+/* Default/Dark theme: Soft blue & blue-tinted near black, matching the
+   Hash Cracker webpage landing palette */
 :root {
-  --bg: #030303;
-  --bg-gradient: radial-gradient(circle at 50% 0%, #071e13 0%, #030303 75%);
-  --bg-grid-color: rgba(16, 185, 129, 0.015);
-  --surface: #0a0c0b;
-  --surface-raised: #121413;
-  --border: rgba(16, 185, 129, 0.08);
+  --bg: #08090c;
+  --bg-gradient: radial-gradient(circle at 50% 0%, #0d1728 0%, #08090c 75%);
+  --bg-grid-color: rgba(140, 172, 224, 0.02);
+  --surface: #101216;
+  --surface-raised: #181b21;
+  --border: rgba(255, 255, 255, 0.11);
 
-  --text: #eafcf1;
-  --text-muted: #809689;
+  --text: #f4f6fa;
+  --text-muted: #b0b8c5;
 
-  --accent: #10b981;
-  --success: #10b981;
-  --warning: #f5b942;
-  --danger: #f1584b;
+  --accent: #8eafff;
+  --success: #55cf8a;
+  --warning: #f0a53e;
+  --danger: #ff7386;
 
   --glow-opacity: 0;
 }
 
-/* Explicit Light Mode Override: Warm beige & cream theme */
+/* Explicit Light Mode Override: cool blue-gray & white theme in the same
+   family as the dark palette */
 html[data-theme="light"] {
-  --bg: #f5f1ea;
-  --bg-gradient: linear-gradient(180deg, #faf7f2 0%, #ede7dc 100%);
-  --bg-grid-color: rgba(16, 185, 129, 0.03);
+  --bg: #f2f4f8;
+  --bg-gradient: linear-gradient(180deg, #f8fafc 0%, #e7ecf4 100%);
+  --bg-grid-color: rgba(77, 107, 254, 0.04);
   --surface: #ffffff;
-  --surface-raised: #eae4d8;
-  --border: rgba(120, 100, 80, 0.12);
+  --surface-raised: #e3e8f1;
+  --border: rgba(70, 90, 130, 0.14);
 
-  --text: #1c1917;
-  --text-muted: #78716c;
+  --text: #172033;
+  --text-muted: #5b6577;
 
-  --accent: #059669;
-  --success: #059669;
+  --accent: #4d6bfe;
+  --success: #16a34a;
   --warning: #d97706;
   --danger: #dc2626;
 }
@@ -133,13 +136,13 @@ body {
   font-weight: 900;
   line-height: 1.1;
   letter-spacing: -0.04em;
-  background: linear-gradient(135deg, #ffffff 0%, var(--accent) 60%, #054026 100%);
+  background: linear-gradient(135deg, #ffffff 0%, var(--accent) 60%, #16294f 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 html[data-theme="light"] .hero-title {
-  background: linear-gradient(135deg, #24201c 0%, var(--accent) 70%, #05301f 100%);
+  background: linear-gradient(135deg, #1c2434 0%, var(--accent) 70%, #2a3f6e 100%);
   -webkit-background-clip: text;
   background-clip: text;
 }
