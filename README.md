@@ -464,7 +464,7 @@ This layout is implemented; `static/` holds the Astro build output (gitignored) 
 
 ## Setup
 
-Requirements: Python 3.11+, Node.js/npm compatible with Astro, and a modern browser. Internet access may be required to install dependencies, but audit operations are designed to run offline. The application runs on **Windows, Linux, and macOS**.
+Requirements: Python 3.11+, Node.js 18+ with npm, and a modern browser. Internet access may be required to install dependencies, but audit operations are designed to run offline. The application runs on **Windows, Linux, and macOS**.
 
 ### One-command setup (recommended)
 
@@ -480,7 +480,7 @@ powershell -ExecutionPolicy Bypass -File .\setup.ps1
 ./setup.sh
 ```
 
-Both scripts are idempotent (safe to re-run) and run the test suite at the end. `setup.ps1 -SkipFrontend` / `./setup.sh --skip-frontend` skip the npm steps.
+Both scripts are idempotent (safe to re-run), check for Node.js and npm before installing dependencies, use the frontend lockfile for a repeatable install, and run the test suite at the end. If you only need the CLI/backend, `setup.ps1 -SkipFrontend` / `./setup.sh --skip-frontend` skips the frontend requirements and build.
 
 ### Manual setup
 

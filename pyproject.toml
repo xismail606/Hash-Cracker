@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,8 @@ version = "0.1.0"
 description = "Offline hash identification and password auditing tool with a CLI and local web dashboard"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { file = "LICENSE.md" }
+license = "MIT"
+license-files = ["LICENSE.md"]
 authors = [{ name = "Hash Cracker project" }]
 dependencies = [
     "Flask>=3.0",

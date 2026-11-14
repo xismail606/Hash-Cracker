@@ -15,6 +15,50 @@ Set-Location $root
 
 function Step($msg) { Write-Host "[setup] $msg" -ForegroundColor Cyan }
 
+# Check the frontend toolchain before spending time installing Python packages.
+if (-not $SkipFrontend) {
+    Step "Checking Node.js and npm..."
+    $nodeCommand = Get-Command node -ErrorAction SilentlyContinue
+    if (-not $nodeCommand) {
+        Write-Host "ERROR: Node.js 18+ was not found on PATH." -ForegroundColor Red
+        Write-Host "Install Node.js with npm from https://nodejs.org, then reopen PowerShell." -ForegroundColor Yellow
+        Write-Host "For a CLI/backend-only install, run: .\setup.ps1 -SkipFrontend" -ForegroundColor Yellow
+        exit 1
+    }
+    try {
+        $nodeVersion = (& $nodeCommand.Source --version).Trim()
+        if ($LASTEXITCODE -ne 0) { throw "node --version failed" }
+        $nodeSemver = [version]($nodeVersion -replace '^v', '')
+    } catch {
+        Write-Host "ERROR: Node.js was found but its version could not be read." -ForegroundColor Red
+        exit 1
+    }
+    if ($nodeSemver.Major -lt 18) {
+        Write-Host "ERROR: Node.js $nodeVersion found; version 18+ is required." -ForegroundColor Red
+        Write-Host "Install a current release from https://nodejs.org." -ForegroundColor Yellow
+        exit 1
+    }
+
+    # Prefer npm.cmd to avoid PowerShell execution-policy errors from npm.ps1.
+    $npmCommand = Get-Command npm.cmd -ErrorAction SilentlyContinue
+    if (-not $npmCommand) { $npmCommand = Get-Command npm -ErrorAction SilentlyContinue }
+    if (-not $npmCommand) {
+        Write-Host "ERROR: Node.js $nodeVersion is installed, but npm was not found on PATH." -ForegroundColor Red
+        Write-Host "Install npm with Node.js (https://nodejs.org), then reopen PowerShell." -ForegroundColor Yellow
+        Write-Host "For a CLI/backend-only install, run: .\setup.ps1 -SkipFrontend" -ForegroundColor Yellow
+        exit 1
+    }
+    $npmPath = $npmCommand.Source
+    try {
+        $npmVersion = (& $npmPath --version).Trim()
+        if ($LASTEXITCODE -ne 0) { throw "npm --version failed" }
+    } catch {
+        Write-Host "ERROR: npm was found but could not be run. Check your Node.js/npm installation." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "  Node.js $nodeVersion and npm $npmVersion OK"
+}
+
 # --- 1. Python ------------------------------------------------------------
 Step "Checking Python (3.11+)..."
 try {
@@ -53,23 +97,16 @@ Write-Host "  Python dependencies installed"
 if ($SkipFrontend) {
     Step "Skipping frontend build (-SkipFrontend)."
 } else {
-    try {
-        $nodeVersion = & node --version
-        Write-Host "  Node $nodeVersion found"
-    } catch {
-        Write-Host "ERROR: Node.js was not found on PATH. Install Node 18+ from https://nodejs.org" -ForegroundColor Red
-        exit 1
-    }
-    Step "Installing frontend dependencies (npm install)..."
+    Step "Installing frontend dependencies (npm ci)..."
     Push-Location frontend
-    & npm install
+    & $npmPath ci
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "ERROR: npm install failed." -ForegroundColor Red
+        Write-Host "ERROR: npm ci failed." -ForegroundColor Red
         Pop-Location
         exit 1
     }
     Step "Building the dashboard (npm run build)..."
-    & npm run build
+    & $npmPath run build
     if ($LASTEXITCODE -ne 0) {
         Write-Host "ERROR: frontend build failed." -ForegroundColor Red
         Pop-Location

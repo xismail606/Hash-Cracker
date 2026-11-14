@@ -8,12 +8,57 @@
 set -euo pipefail
 
 skip_frontend=false
-[ "${1:-}" = "--skip-frontend" ] && skip_frontend=true
+if [ "$#" -gt 1 ]; then
+    echo "Usage: ./setup.sh [--skip-frontend]" >&2
+    exit 2
+fi
+case "${1:-}" in
+    "") ;;
+    --skip-frontend) skip_frontend=true ;;
+    *)
+        echo "Unknown option: $1" >&2
+        echo "Usage: ./setup.sh [--skip-frontend]" >&2
+        exit 2
+        ;;
+esac
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$root"
 
 step() { echo "[setup] $1"; }
+
+# Check the frontend toolchain before spending time installing Python packages.
+if [ "$skip_frontend" = false ]; then
+    step "Checking Node.js and npm..."
+    if ! command -v node >/dev/null 2>&1; then
+        echo "ERROR: Node.js 18+ was not found on PATH." >&2
+        echo "Install Node.js with npm from https://nodejs.org, then reopen your terminal." >&2
+        echo "For a CLI/backend-only install, run: ./setup.sh --skip-frontend" >&2
+        exit 1
+    fi
+    if ! node_version=$(node --version 2>/dev/null); then
+        echo "ERROR: Node.js was found but could not be run." >&2
+        exit 1
+    fi
+    node_major=${node_version#v}
+    node_major=${node_major%%.*}
+    if ! [[ "$node_major" =~ ^[0-9]+$ ]] || [ "$node_major" -lt 18 ]; then
+        echo "ERROR: Node.js $node_version found; version 18+ is required." >&2
+        echo "Install a current release from https://nodejs.org." >&2
+        exit 1
+    fi
+    if ! command -v npm >/dev/null 2>&1; then
+        echo "ERROR: Node.js $node_version is installed, but npm was not found on PATH." >&2
+        echo "Install npm with Node.js (https://nodejs.org), then reopen your terminal." >&2
+        echo "For a CLI/backend-only install, run: ./setup.sh --skip-frontend" >&2
+        exit 1
+    fi
+    if ! npm_version=$(npm --version 2>/dev/null); then
+        echo "ERROR: npm was found but could not be run. Check your Node.js/npm installation." >&2
+        exit 1
+    fi
+    echo "  Node.js $node_version and npm $npm_version OK"
+fi
 
 # --- 1. Python ------------------------------------------------------------
 step "Checking Python (3.11+)..."
@@ -65,12 +110,8 @@ step "Python dependencies installed."
 if [ "$skip_frontend" = true ]; then
     step "Skipping frontend build (--skip-frontend)."
 else
-    if ! command -v node >/dev/null 2>&1; then
-        echo "ERROR: Node.js was not found on PATH. Install Node 18+ from https://nodejs.org" >&2
-        exit 1
-    fi
-    step "Installing frontend dependencies (npm install)..."
-    (cd frontend && npm install)
+    step "Installing frontend dependencies (npm ci)..."
+    (cd frontend && npm ci)
     step "Building the dashboard (npm run build)..."
     (cd frontend && npm run build)
 fi
