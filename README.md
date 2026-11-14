@@ -464,7 +464,7 @@ This layout is implemented; `static/` holds the Astro build output (gitignored) 
 
 ## Setup
 
-Requirements: Python 3.11+, Node.js 18+ with npm, and a modern browser. Internet access may be required to install dependencies, but audit operations are designed to run offline. The application runs on **Windows, Linux, and macOS**.
+Requirements: Python 3.11+, a modern browser, and internet access for the first setup. The setup scripts install the latest Node.js LTS release and npm automatically when the frontend toolchain is missing or too old (using nvm on Linux/macOS and winget on Windows). Windows may request administrator approval for winget; App Installer/winget must be available. Audit operations are designed to run offline. The application runs on **Windows, Linux, and macOS**.
 
 ### One-command setup (recommended)
 
@@ -480,7 +480,7 @@ powershell -ExecutionPolicy Bypass -File .\setup.ps1
 ./setup.sh
 ```
 
-Both scripts are idempotent (safe to re-run), check for Node.js and npm before installing dependencies, use the frontend lockfile for a repeatable install, and run the test suite at the end. If you only need the CLI/backend, `setup.ps1 -SkipFrontend` / `./setup.sh --skip-frontend` skips the frontend requirements and build.
+Both scripts are idempotent (safe to re-run), install the frontend toolchain if needed, use the frontend lockfile for a repeatable install, and run the test suite at the end. If you only need the CLI/backend, `setup.ps1 -SkipFrontend` / `./setup.sh --skip-frontend` skips the frontend installation and build.
 
 ### Manual setup
 

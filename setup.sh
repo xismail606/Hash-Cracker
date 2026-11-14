@@ -27,53 +27,83 @@ cd "$root"
 
 step() { echo "[setup] $1"; }
 
-# Check the frontend toolchain before spending time installing Python packages.
-if [ "$skip_frontend" = false ]; then
-    step "Checking Node.js and npm..."
-    if ! command -v node >/dev/null 2>&1; then
-        echo "ERROR: Node.js 18+ was not found on PATH." >&2
-        echo "Install Node.js with npm from https://nodejs.org, then reopen your terminal." >&2
-        echo "For a CLI/backend-only install, run: ./setup.sh --skip-frontend" >&2
-        exit 1
-    fi
-    if ! node_version=$(node --version 2>/dev/null); then
-        echo "ERROR: Node.js was found but could not be run." >&2
-        exit 1
-    fi
-    node_major=${node_version#v}
-    node_major=${node_major%%.*}
-    if ! [[ "$node_major" =~ ^[0-9]+$ ]] || [ "$node_major" -lt 18 ]; then
-        echo "ERROR: Node.js $node_version found; version 18+ is required." >&2
-        echo "Install a current release from https://nodejs.org." >&2
-        exit 1
-    fi
-    if ! command -v npm >/dev/null 2>&1; then
-        echo "ERROR: Node.js $node_version is installed, but npm was not found on PATH." >&2
-        echo "Install npm with Node.js (https://nodejs.org), then reopen your terminal." >&2
-        echo "For a CLI/backend-only install, run: ./setup.sh --skip-frontend" >&2
-        exit 1
-    fi
-    if ! npm_version=$(npm --version 2>/dev/null); then
-        echo "ERROR: npm was found but could not be run. Check your Node.js/npm installation." >&2
-        exit 1
-    fi
-    echo "  Node.js $node_version and npm $npm_version OK"
-fi
+node_toolchain_ready() {
+    command -v node >/dev/null 2>&1 || return 1
+    command -v npm >/dev/null 2>&1 || return 1
 
-# --- 1. Python ------------------------------------------------------------
+    local version node_number major minor patch npm_ver npm_major npm_minor npm_patch
+    version=$(node --version 2>/dev/null) || return 1
+    node_number=${version#v}
+    IFS=. read -r major minor patch <<< "$node_number"
+    patch=${patch%%-*}
+    [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ ]] || return 1
+    if [ "$major" -lt 22 ] && ! { [ "$major" -eq 20 ] && [ "$minor" -ge 3 ]; }; then
+        return 1
+    fi
+
+    npm_ver=$(npm --version 2>/dev/null) || return 1
+    IFS=. read -r npm_major npm_minor npm_patch <<< "$npm_ver"
+    npm_patch=${npm_patch%%[-+]*}
+    [[ "$npm_major" =~ ^[0-9]+$ && "$npm_minor" =~ ^[0-9]+$ && "$npm_patch" =~ ^[0-9]+$ ]] || return 1
+    if [ "$npm_major" -lt 9 ] || { [ "$npm_major" -eq 9 ] && { [ "$npm_minor" -lt 6 ] || { [ "$npm_minor" -eq 6 ] && [ "$npm_patch" -lt 5 ]; }; }; }; then
+        return 1
+    fi
+
+    echo "  Node.js $version and npm $npm_ver OK"
+}
+
+install_node_toolchain() {
+    step "Node.js/npm is missing or incompatible; installing the latest LTS Node.js with npm for this user..."
+
+    if [ -z "${NVM_DIR:-}" ]; then
+        if [ -n "${XDG_CONFIG_HOME:-}" ]; then
+            NVM_DIR="$XDG_CONFIG_HOME/nvm"
+        else
+            NVM_DIR="$HOME/.nvm"
+        fi
+    fi
+    export NVM_DIR
+
+    if ! command -v nvm >/dev/null 2>&1; then
+        if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+            nvm_installer="https://raw.githubusercontent.com/nvm-sh/nvm/v0.41.0/install.sh"
+            if command -v curl >/dev/null 2>&1; then
+                curl -fsSL "$nvm_installer" | bash
+            elif command -v wget >/dev/null 2>&1; then
+                wget -qO- "$nvm_installer" | bash
+            else
+                echo "ERROR: curl or wget is required to install Node.js automatically." >&2
+                exit 1
+            fi
+        fi
+        if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+            echo "ERROR: nvm installation did not create $NVM_DIR/nvm.sh." >&2
+            exit 1
+        fi
+        # shellcheck disable=SC1090
+        . "$NVM_DIR/nvm.sh"
+    fi
+
+    nvm install --lts
+    nvm use --lts
+    if ! node_toolchain_ready; then
+        echo "ERROR: Node.js/npm installation completed, but the tools are still unavailable." >&2
+        exit 1
+    fi
+}
+
+# Preflight all runtimes before installing or changing anything.
 step "Checking Python (3.11+)..."
-# Prefer python3, but fall back to python when python3 is a broken shim
-# (e.g. the Windows Store alias inside Git Bash).
 PYTHON=""
 for candidate in python3 python; do
-    if candidate_version=$("$candidate" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null); then
+    if candidate_version=$($candidate -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null); then
         PYTHON="$candidate"
         py_version="$candidate_version"
         break
     fi
 done
 if [ -z "$PYTHON" ]; then
-    echo "ERROR: Python 3.11+ was not found on PATH. Install it from https://python.org" >&2
+    echo "ERROR: Python 3.11+ is missing. Install Python, then rerun setup." >&2
     exit 1
 fi
 major="${py_version%%.*}"; minor="${py_version##*.}"
@@ -82,6 +112,14 @@ if [ "$major" -lt 3 ] || { [ "$major" -eq 3 ] && [ "$minor" -lt 11 ]; }; then
     exit 1
 fi
 echo "  Python $py_version OK"
+
+# Only after preflight, install the missing frontend runtime if needed.
+if [ "$skip_frontend" = false ]; then
+    step "Checking Node.js and npm..."
+    if ! node_toolchain_ready; then
+        install_node_toolchain
+    fi
+fi
 
 # --- 2. Virtual environment -------------------------------------------------
 # venv layout differs: bin/ on Linux/macOS, Scripts/ on Windows (Git Bash).
