@@ -8,7 +8,7 @@ The dashboard uses Astro, React, JavaScript, and Tailwind CSS. Flask serves the 
 - Hashes, candidate data, and results remain on the local machine; the application makes no external requests.
 - State-changing routes require same-origin/CSRF protection: `GET /api/session` issues a token (returned in JSON and set as the `pa_csrf` cookie) and `POST` routes must repeat it in the `X-CSRF-Token` header; requests with a foreign `Origin`/`Referer` are rejected.
 - One dashboard job may run at a time; the CLI may be used separately. A second start request receives HTTP 409.
-- Start the server with `python -m password_audit serve [--port PORT]` (default port 8765). It serves the Astro build from `src/password_audit/static/`; build it with `npm install && npm run build` inside `frontend/` (Astro writes the output to that static folder). If the build is missing, the server starts and explains how to build the frontend instead of serving a broken page.
+- Start the server with `hashcrack serve [--port PORT]` (default port 8765). It serves the Astro build from `src/password_audit/static/`; build it with `npm install && npm run build` inside `frontend/` (Astro writes the output to that static folder). If the build is missing, the server starts and explains how to build the frontend instead of serving a broken page.
 - The JSON API exists only on the Flask server. Opening the built page through a static server (`npm run preview`, a plain file host) shows a "Flask backend not detected" banner instead of silently failing; for frontend development, `npm run dev` and `npm run preview` proxy `/api` to `http://127.0.0.1:8765`, so start the Flask server first.
 
 ## Dashboard Form
@@ -21,7 +21,7 @@ The dashboard uses Astro, React, JavaScript, and Tailwind CSS. Flask serves the 
 - An optional hashlist upload (same format as the CLI hashlist) audits many targets in one pass; it replaces the single hash field and its per-target results are shown in a results table with the batch ID.
 - Dictionary mode offers mutation-rule presets that expand candidates inside the candidate budget.
 - A run-level checkbox withholds the recovered plaintext from local history (the match is still recorded with a withheld marker).
-- The Auto-fit button identifies the hash and pre-fills brute-force settings that fit the budget; for an identified LM target it suggests an upper-only alphabet (LM compares uppercase only) and for ambiguous shapes it deliberately leaves the algorithm unselected.
+- The Auto-fit button identifies the hash and applies brute-force settings to the form: `lower,digits` by default, `upper` for an identified LM target, minimum length 1, the largest fully covered maximum length under the 10,000,000-candidate hard limit, and a candidate budget equal to the full configured search space. It does not infer the plaintext length. For ambiguous shapes it leaves the algorithm unselected.
 - Brute-force mode requires a selected charset, minimum length, maximum length, and candidate budget; the budget defaults to 1,000,000 and cannot exceed 10,000,000.
 - Offers worker counts from 1 through 8, defaulting to 4.
 - Requires acknowledgement of the local plaintext/hash retention warning before an audit begins.

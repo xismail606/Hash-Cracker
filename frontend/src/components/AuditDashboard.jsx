@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   Sparkles,
   KeyRound,
+  CircleCheck,
 } from "lucide-react";
 
 // Local dashboard for the offline hash-audit engine. Talks only to the
@@ -73,6 +74,7 @@ const SALTED_BY_LENGTH = {
   128: ["sha512_pass_salt", "sha512_salt_pass"],
 };
 const isSalted = (name) => name.endsWith("_pass_salt") || name.endsWith("_salt_pass");
+const HARD_MAX_CANDIDATES = 10_000_000;
 
 const RULES_PRESETS = [
   { name: "none", label: "No rules (original words only)" },
@@ -154,6 +156,7 @@ export default function AuditDashboard() {
   const [csrfToken, setCsrfToken] = useState("");
   const [serverMissing, setServerMissing] = useState(false);
   const pollRef = useRef(null);
+  const progressRef = useRef(null);
 
   // History
   const [history, setHistory] = useState(null);
@@ -182,6 +185,20 @@ export default function AuditDashboard() {
     return () => clearInterval(pollRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Bring the progress card into view once a run reaches a terminal state —
+  // the recovered plaintext is the payoff of the run, so surface it.
+  useEffect(() => {
+    if (!job?.result && !job?.error) return;
+    const prefersReduced = window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
+    progressRef.current?.scrollIntoView({
+      behavior: prefersReduced ? "auto" : "smooth",
+      block: "start",
+    });
+    // Polling stops on a terminal state, so this fires once per run.
+  }, [job?.result, job?.error]);
 
   function refreshHistory() {
     apiFetch("/api/history")
@@ -392,10 +409,17 @@ export default function AuditDashboard() {
   const running = job && !job.result && !job.error;
   const budgetFraction =
     job && job.budget && job.budget > 0 ? Math.min(job.attempts / job.budget, 1) : null;
+  const resultStatus = job?.result?.status;
+  const terminalCardClass = job?.error
+    ? "card-result-error"
+    : resultStatus === "match"
+      ? "card-result-match"
+      : resultStatus
+        ? "card-result-no-match"
+        : "";
 
-  // Identify the current hash and pre-fill brute-force settings that fit the
-  // candidate budget: a default password alphabet and the largest length
-  // range whose full search space stays inside the budget.
+  // Identify the hash and fill a complete, runnable brute-force range within
+  // the engine's hard candidate limit.
   async function suggestBruteForce() {
     setError(null);
     setSuggestion(null);
@@ -425,7 +449,7 @@ export default function AuditDashboard() {
       const names = isLm ? ["upper"] : ["lower", "digits"];
       const alphabetSize = isLm ? 26 : 36; // |upper| vs |lower + digits|
       const alphabetLabel = isLm ? "upper" : "lower+digits";
-      const budget = maxCandidates;
+      const budget = HARD_MAX_CANDIDATES;
       let fitLength = 0;
       let covered = 0;
       for (let len = 1; len <= 12; len++) {
@@ -445,6 +469,7 @@ export default function AuditDashboard() {
       setCustomCharset("");
       setMinLength(1);
       setMaxLength(fitLength);
+      setMaxCandidates(covered);
       setSuggestion({
         ok: true,
         text: `Identified ${
@@ -453,9 +478,9 @@ export default function AuditDashboard() {
           payload.ambiguous
             ? " — ambiguous shape, pick the algorithm below before starting"
             : " — selected"
-        }; set charset ${alphabetLabel} (${alphabetSize} characters)${
+        }; applied charset ${alphabetLabel} (${alphabetSize} characters)${
           isLm ? " — LM compares uppercase only" : ""
-        } and lengths 1–${fitLength}, covering a full space of ${covered.toLocaleString()} candidates within the ${budget.toLocaleString()} budget.`,
+        } and updated the length and candidate-budget fields to 1–${fitLength} and ${covered.toLocaleString()}, respectively, so the full configured search space can run.`,
       });
     } catch (err) {
       setError(err.message);
@@ -906,7 +931,11 @@ export default function AuditDashboard() {
 
       {/* Progress / result */}
       {job && (
-        <section className="card" aria-labelledby="step-progress">
+        <section
+          ref={progressRef}
+          className={`card ${terminalCardClass}`}
+          aria-labelledby="step-progress"
+        >
           <CardHeader
             id="step-progress"
             icon={<Zap size={15} />}
@@ -916,8 +945,8 @@ export default function AuditDashboard() {
             }
           />
           <div className="px-5 py-4">
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
-              <div>
+            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="rounded-xl border border-border bg-surface-raised/40 px-3.5 py-3">
                 <dt className={labelClass}>State</dt>
                 <dd className="mt-1">
                   {job.result ? (
@@ -927,23 +956,26 @@ export default function AuditDashboard() {
                       {STATUS_LABELS[job.result.status] || job.result.status}
                     </span>
                   ) : (
-                    <span className="mono text-sm text-text">{job.state}</span>
+                    <span className="mono flex items-center gap-2 text-sm capitalize text-text">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent"></span>
+                      {job.state}
+                    </span>
                   )}
                 </dd>
               </div>
-              <div>
+              <div className="rounded-xl border border-border bg-surface-raised/40 px-3.5 py-3">
                 <dt className={labelClass}>Attempts</dt>
                 <dd className="mono mt-1 text-sm font-semibold text-text">
                   {job.attempts.toLocaleString()}
                 </dd>
               </div>
-              <div>
+              <div className="rounded-xl border border-border bg-surface-raised/40 px-3.5 py-3">
                 <dt className={labelClass}>Elapsed</dt>
                 <dd className="mono mt-1 text-sm font-semibold text-text">
                   {(job.elapsed_ms / 1000).toFixed(1)}s
                 </dd>
               </div>
-              <div>
+              <div className="rounded-xl border border-border bg-surface-raised/40 px-3.5 py-3">
                 <dt className={labelClass}>Workers</dt>
                 <dd className="mono mt-1 text-sm font-semibold text-text">{job.workers}</dd>
               </div>
@@ -959,7 +991,7 @@ export default function AuditDashboard() {
               <div className="mt-4">
                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-raised">
                   <div
-                    className="h-full rounded-full bg-accent transition-[width] duration-500"
+                    className={`h-full rounded-full bg-accent transition-[width] duration-500 ${running ? "progress-shimmer" : ""}`}
                     style={{ width: `${budgetFraction * 100}%` }}
                   />
                 </div>
@@ -970,26 +1002,32 @@ export default function AuditDashboard() {
               </div>
             )}
             {job.result?.status === "match" && !job.result.targets && (
-              <div className="mt-4 rounded-2xl border border-success/30 bg-success/10 px-4 py-3">
-                <p className="flex items-center gap-2 text-sm font-bold text-success">
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success"></span>
-                  {job.result.plaintext_withheld
-                    ? "Match — plaintext withheld"
-                    : "Match — sensitive data stored locally"}
-                </p>
-                {!job.result.plaintext_withheld && (
-                  <p className="mono mt-2 break-all text-sm text-text">
-                    Plaintext: {job.result.matched_plaintext}
+              <div className="mt-4 overflow-hidden rounded-2xl border border-success/30 bg-success/10">
+                <div className="flex items-center gap-2.5 border-b border-success/20 px-4 py-3">
+                  <CircleCheck size={16} className="shrink-0 text-success" />
+                  <p className="text-sm font-bold text-success">
+                    {job.result.plaintext_withheld
+                      ? "Match — plaintext withheld"
+                      : "Match — sensitive data stored locally"}
                   </p>
-                )}
-                <p className="mono mt-1 break-all text-sm text-text-muted">
-                  {job.result.target_hash}
-                </p>
-                {job.result.plaintext_withheld && (
-                  <p className="mt-2 text-xs text-warning">
-                    Plaintext withheld from local history at your request.
+                </div>
+                <div className="px-4 py-3">
+                  {!job.result.plaintext_withheld ? (
+                    <div>
+                      <p className={labelClass}>Recovered plaintext</p>
+                      <code className="mono block break-all rounded-lg border border-success/25 bg-surface px-3 py-2 text-base text-success">
+                        {job.result.matched_plaintext}
+                      </code>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-warning">
+                      Plaintext withheld from local history at your request.
+                    </p>
+                  )}
+                  <p className="mono mt-2 break-all text-xs text-text-muted">
+                    {job.result.target_hash}
                   </p>
-                )}
+                </div>
               </div>
             )}
             {job.state === "paused" && !job.result && (
@@ -1011,10 +1049,10 @@ export default function AuditDashboard() {
                     Plaintext withheld from local history at your request.
                   </p>
                 )}
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto rounded-xl border border-border bg-surface-raised/25">
                   <table className="w-full text-left text-sm">
                     <thead>
-                      <tr className="border-b border-border text-[10px] font-bold section-label text-text-muted">
+                      <tr className="border-b border-border bg-surface-raised/60 text-[10px] font-bold section-label text-text-muted">
                         <th className="py-2 pr-4">Status</th>
                         <th className="py-2 pr-4">Algorithm</th>
                         <th className="py-2 pr-4">Hash</th>
@@ -1024,7 +1062,10 @@ export default function AuditDashboard() {
                     </thead>
                     <tbody className="mono text-xs">
                       {job.result.targets.map((t) => (
-                        <tr key={t.id} className="border-b border-border/60 text-text-muted">
+                        <tr
+                          key={t.id}
+                          className="border-b border-border/60 text-text-muted transition-colors last:border-b-0 hover:bg-surface-raised/50"
+                        >
                           <td className="py-2 pr-4">
                             <span
                               className={
@@ -1170,7 +1211,7 @@ export default function AuditDashboard() {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
-                  <tr className="border-b border-border text-[10px] font-bold section-label text-text-muted">
+                  <tr className="border-b border-border bg-surface-raised/60 text-[10px] font-bold section-label text-text-muted">
                     <th className="py-2 pr-4">#</th>
                     <th className="py-2 pr-4">Started (UTC)</th>
                     <th className="py-2 pr-4">Status</th>
@@ -1184,7 +1225,10 @@ export default function AuditDashboard() {
                 </thead>
                 <tbody className="mono text-xs">
                   {history.map((record) => (
-                    <tr key={record.run_id} className="border-b border-border/60 text-text-muted">
+                    <tr
+                      key={record.run_id}
+                      className="border-b border-border/60 text-text-muted transition-colors last:border-b-0 hover:bg-surface-raised/50"
+                    >
                       <td className="py-2 pr-4 font-semibold text-text">{record.run_id}</td>
                       <td className="py-2 pr-4">{record.started_at}</td>
                       <td className="py-2 pr-4">

@@ -143,7 +143,12 @@ def create_app(
 
     @app.get("/<path:asset>")
     def assets(asset: str):
+        # Astro builds each page as <page>/index.html (directory format), so a
+        # clean URL like /changelog resolves to that page's index file.
         target = Path(static_folder) / asset
+        if target.is_dir():
+            target = target / "index.html"
+            asset = f"{asset}/index.html"
         if target.is_file():
             response = send_from_directory(str(static_folder), asset)
             response.headers["Cache-Control"] = "no-cache"

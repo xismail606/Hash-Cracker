@@ -39,7 +39,7 @@ The Python package includes Flask and Passlib (NTLM). The Astro build writes the
 ## Identify Hash Formats
 
 ```text
-python -m password_audit identify HASH
+hashcrack identify HASH
 ```
 
 Verified behavior:
@@ -53,7 +53,7 @@ Verified behavior:
 Create a temporary wordlist containing synthetic values and use a hash computed from one of those values.
 
 ```text
-python -m password_audit audit HASH --algorithm sha256 --mode dictionary --wordlist PATH --workers 4
+hashcrack audit HASH --algorithm sha256 --mode dictionary --wordlist PATH --workers 4
 ```
 
 Input rules (implemented in `candidates.py`):
@@ -70,7 +70,7 @@ Verified behavior: the tool reports match/no-match, attempts, effective worker c
 Salted fast hashes take the known salt as a run parameter:
 
 ```text
-python -m password_audit audit 3d83c8e717ff0e7ecfe187f088d69954 --algorithm md5_pass_salt --salt 343141 --mode dictionary --wordlist PATH
+hashcrack audit 3d83c8e717ff0e7ecfe187f088d69954 --algorithm md5_pass_salt --salt 343141 --mode dictionary --wordlist PATH
 ```
 
 Verified behavior: hashcat salted examples (modes 10 and 1410, plaintext `hashcat`) audit to MATCH with the example salt; a wrong salt gives an honest no_match; omitting `--salt` for a salted format fails before processing; the salt is stored in the history record.
@@ -78,7 +78,7 @@ Verified behavior: hashcat salted examples (modes 10 and 1410, plaintext `hashca
 ## Benchmark
 
 ```text
-python -m password_audit benchmark --seconds 1
+hashcrack benchmark --seconds 1
 ```
 
 Verified behavior: prints per-algorithm candidates/second (e.g. SHA-256 near 800k/s in-process while NTLM via Passlib runs near 23k/s on the same machine) to guide budget choices. Results are informational only.
@@ -103,7 +103,7 @@ ntlm:b4b9b02e6f09a9bd760f388b67351e2b
 ```
 
 ```text
-python -m password_audit audit --hashlist PATH --mode dictionary --wordlist PATH
+hashcrack audit --hashlist PATH --mode dictionary --wordlist PATH
 ```
 
 Verified behavior: bare 32-hex lines are rejected (MD5/NTLM/MD4 ambiguity needs the prefix); a candidate matching several targets counts once and marks all of them matched at that attempt; history stores one record per target plus the batch summary (also visible in JSON export).
@@ -111,7 +111,7 @@ Verified behavior: bare 32-hex lines are rejected (MD5/NTLM/MD4 ambiguity needs 
 ## Rules (Dictionary Mutations)
 
 ```text
-python -m password_audit audit HASH --algorithm md5 --mode dictionary --wordlist PATH --rules append_digits_0_99
+hashcrack audit HASH --algorithm md5 --mode dictionary --wordlist PATH --rules append_digits_0_99
 ```
 
 Verified behavior: a target found only via a mutated candidate (`hashcat1` from wordlist word `hashcat`) is reported with the mutated plaintext, attempts count the expanded stream, and the budget truncates the expansion exactly (`budget_exhausted` when the full expansion would exceed it).
@@ -121,7 +121,7 @@ Verified behavior: a target found only via a mutated candidate (`hashcat1` from 
 Use a short synthetic test secret and a small charset/length range that includes it.
 
 ```text
-python -m password_audit audit HASH --algorithm md5 --mode brute-force --charset lower,digits --min-length 1 --max-length 4 --max-candidates 10000 --workers 4
+hashcrack audit HASH --algorithm md5 --mode brute-force --charset lower,digits --min-length 1 --max-length 4 --max-candidates 10000 --workers 4
 ```
 
 Input rules (implemented in `bruteforce.py`):
@@ -135,7 +135,7 @@ Verified behavior: candidates are generated in increasing length and lexicograph
 ## Local Web Dashboard
 
 ```text
-python -m password_audit serve [--port 8765]
+hashcrack serve [--port 8765]
 ```
 
 Open the printed localhost URL. The dashboard offers hash identification, algorithm selection for ambiguous shapes, both audit modes, worker counts 1–8, live progress polling every 0.5 s, cancellation, result display, and the history table. Verified behavior:
@@ -149,9 +149,9 @@ Open the printed localhost URL. The dashboard offers hash identification, algori
 ## History and Reports
 
 ```text
-python -m password_audit history [--limit N]
-python -m password_audit export report.csv --format csv
-python -m password_audit export report.json --format json
+hashcrack history [--limit N]
+hashcrack export report.csv --format csv
+hashcrack export report.json --format json
 ```
 
 Verified behavior: records include algorithm, mode, target hash, status, attempts, elapsed time, worker count, and timestamp. Successful matches include the plaintext/hash pair required by the assignment. The default database is `~/.password_audit/history.db`; pass `--database PATH` to use a different local file.

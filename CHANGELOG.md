@@ -7,6 +7,11 @@ v2 feature-expansion plan ([specs/002-feature-expansion](specs/002-feature-expan
 
 ## Unreleased
 
+### Added
+
+- Linux setup installs a user-local `hashcrack` command in `~/.local/bin`; it runs the project CLI from any working directory without activating the virtual environment.
+- Dashboard Auto-fit now applies charset, length, and candidate-budget values to the form, covering the full configured search space up to the 10,000,000-candidate hard limit.
+
 ### Changed
 
 - Increased the dashboard wordlist upload limit from 100 MiB to 256 MiB.

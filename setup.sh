@@ -144,6 +144,35 @@ step "Installing the package with all extras (dev, encrypt, adaptive)..."
 "$venv_python" -m pip install -e ".[dev,encrypt,adaptive]" -q
 step "Python dependencies installed."
 
+# Provide a Linux-only user command that works from any directory without
+# requiring users to activate the project virtual environment.
+if [ "$(uname -s)" = "Linux" ]; then
+    user_bin="$HOME/.local/bin"
+    launcher="$user_bin/hashcrack"
+    mkdir -p "$user_bin"
+    printf '#!/usr/bin/env bash\nexec %q -m password_audit "$@"\n' "$venv_python" > "$launcher"
+    chmod 755 "$launcher"
+
+    case ":$PATH:" in
+        *":$user_bin:"*) ;;
+        *)
+            shell_name="$(basename "${SHELL:-bash}")"
+            case "$shell_name" in
+                zsh) shell_profile="$HOME/.zshrc" ;;
+                bash) shell_profile="$HOME/.bashrc" ;;
+                *) shell_profile="$HOME/.profile" ;;
+            esac
+            path_line='export PATH="$HOME/.local/bin:$PATH"'
+            if ! [ -f "$shell_profile" ] || ! grep -F -q "$path_line" "$shell_profile"; then
+                printf '\n# User-local command-line tools\n%s\n' "$path_line" >> "$shell_profile"
+            fi
+            echo "[setup] Added $user_bin to PATH in $shell_profile."
+            echo "[setup] Open a new terminal or run: source $shell_profile"
+            ;;
+    esac
+    step "Installed the local command: hashcrack"
+fi
+
 # --- 4. Node + frontend -------------------------------------------------------
 if [ "$skip_frontend" = true ]; then
     step "Skipping frontend build (--skip-frontend)."
@@ -164,6 +193,6 @@ echo
 echo "Setup complete!"
 echo
 echo "Run the dashboard:   ./serve.sh            (http://127.0.0.1:8765)"
-echo "Run the CLI:         .venv/bin/python -m password_audit --help"
+echo "Run the CLI:         hashcrack --help (from any directory)"
 echo
 echo "Authorized local auditing only — no remote targets, no network access."

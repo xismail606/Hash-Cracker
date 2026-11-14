@@ -74,7 +74,7 @@ Every implementation task uses `- [ ] T### [P?] Description with file path`. `[P
 - [x] T062 Add `GET /api/export?format=csv|json` in `src/password_audit/web.py` and download buttons in `frontend/src/components/AuditDashboard.jsx`.
 - [x] T063 Compute and display ETA (attempts/second × remaining) in CLI progress and the dashboard in `src/password_audit/cli.py` and `frontend/src/components/AuditDashboard.jsx`.
 - [x] T064 Add the `--no-store-plaintext` CLI flag and dashboard checkbox (run-level, withheld marker in history) in `src/password_audit/cli.py`, `src/password_audit/engine.py`, `src/password_audit/history.py`, and `frontend/src/components/AuditDashboard.jsx`.
-- [x] T065 Make Auto-fit LM-aware (upper-only alphabet suggestion when the identified algorithm is LM) in `frontend/src/components/AuditDashboard.jsx`.
+- [x] T065 Make Auto-fit LM-aware and apply charset, length, and candidate-budget values to the dashboard form in `frontend/src/components/AuditDashboard.jsx`.
 - [x] T066 [P] Update the CLI and web contracts for all phase-8 features in `specs/001-offline-password-audit/contracts/cli.md` and `specs/001-offline-password-audit/contracts/web.md`.
 
 **Checkpoint**: Both interfaces gain benchmark, pause/resume, export, ETA, and plaintext-withholding without losing exact accounting.

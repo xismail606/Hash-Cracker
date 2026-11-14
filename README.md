@@ -26,6 +26,7 @@ Both interfaces call the same Python audit engine. The engine supports:
 - **Benchmark**: per-algorithm candidates/second on this machine (`benchmark` command).
 - **Pause/resume** dashboard jobs, **ETA** display, CSV/JSON **export from the dashboard**, and an option to **withhold plaintext** or **encrypt it at rest** (passphrase-based).
 - **Brute-force mode**: generate candidates from a selected character set and length range, stopping at a configured candidate budget.
+- **Dashboard Auto-fit**: fills charset, length, and budget fields with a complete search space within the 10,000,000-candidate hard limit. It cannot infer the plaintext length; ambiguous algorithms still require a manual choice.
 
 ## Supported Hashes
 
@@ -111,20 +112,32 @@ flowchart LR
 
 ## Usage Guide
 
-All commands work on Windows (`python`), Linux/macOS (`python3`, or the venv
-path), and the installed console script (`password-audit`). Exit codes:
+After running the setup script on Windows or Linux, the `hashcrack` command
+works from any directory. With a manual install, activate `.venv` first.
+macOS users can run `.venv/bin/hashcrack` after installing into the venv.
+Exit codes:
 **0** success, **1** invalid input, **2** cancelled/interrupted, **3** storage
-failure. Run `python -m password_audit --help` for the full option list.
+failure. Run `hashcrack --help` for the full option list.
+
+Examples:
+
+```bash
+hashcrack identify 8743b52063cd84097a65d1633f5c74f5
+hashcrack audit HASH --algorithm sha256 --mode brute-force --charset lower,digits --min-length 1 --max-length 4
+```
+
+The dashboard remains tied to the project: start it from the project folder
+with `./serve.sh` on Linux/macOS or `.\serve.ps1` on Windows.
 
 ### 1. Identify a hash
 
 ```bash
-python -m password_audit identify 8743b52063cd84097a65d1633f5c74f5
+hashcrack identify 8743b52063cd84097a65d1633f5c74f5
 # → 32-hex shapes are ambiguous: MD5 / NTLM / MD4 — choose explicitly
-python -m password_audit identify 127e6fbf...  # 64-hex: SHA-256 or SHA-512/256
-python -m password_audit identify b89eaac7...  # 40-hex: SHA-1 or RIPEMD-160
-python -m password_audit identify 299bd128c1101fd6  # 16-hex: LM
-python -m password_audit identify '$2a$05$...'  # prefix-recognized: bcrypt
+hashcrack identify 127e6fbf...  # 64-hex: SHA-256 or SHA-512/256
+hashcrack identify b89eaac7...  # 40-hex: SHA-1 or RIPEMD-160
+hashcrack identify 299bd128c1101fd6  # 16-hex: LM
+hashcrack identify '$2a$05$...'  # prefix-recognized: bcrypt
 ```
 
 Supported shapes: LM (16), MD5/NTLM/MD4 (32, ambiguous), SHA-1/RIPEMD-160 (40,
@@ -140,7 +153,7 @@ against it:
 
 ```bash
 # words.txt contains: hashcat, password, 123456, ...
-python -m password_audit audit 8743b52063cd84097a65d1633f5c74f5 \
+hashcrack audit 8743b52063cd84097a65d1633f5c74f5 \
     --algorithm md5 --mode dictionary --wordlist words.txt --workers 4
 ```
 
@@ -153,7 +166,7 @@ the retention acknowledgement (`--yes` skips the interactive prompt,
 ### 3. Brute-force audit (bounded)
 
 ```bash
-python -m password_audit audit 8743b52063cd84097a65d1633f5c74f5 \
+hashcrack audit 8743b52063cd84097a65d1633f5c74f5 \
     --algorithm md5 --mode brute-force \
     --charset lower,digits --min-length 1 --max-length 4 \
     --max-candidates 10000 --workers 4
@@ -163,7 +176,15 @@ python -m password_audit audit 8743b52063cd84097a65d1633f5c74f5 \
   literal text, comma-separated (e.g. `lower,digits` or `abc123`)
 - Stops at a match, the budget (default 1,000,000; hard max 10,000,000), or
   Ctrl+C; a truncated space reports `budget_exhausted`
-- Pick a realistic budget with `python -m password_audit benchmark`
+- Pick a realistic budget with `hashcrack benchmark`
+
+In the dashboard, **Auto-fit** applies its recommendation to the controls: it
+selects `lower,digits` (or `upper` for an identified LM target), sets minimum
+length to 1, chooses the largest fully covered length range under the
+10,000,000 hard cap, and sets the candidate budget to that range's full size.
+It does not determine the target plaintext's actual length. If a hash shape
+matches multiple algorithms, the algorithm remains unselected until you
+choose one.
 
 Brute force does not reverse a hash or consult a wordlist. It enumerates every
 string formed from the selected character set, shortest length first, hashes
@@ -176,7 +197,7 @@ exponentially with the character-set size and maximum length.
 ### 4. Salted formats
 
 ```bash
-python -m password_audit audit 3d83c8e717ff0e7ecfe187f088d69954 \
+hashcrack audit 3d83c8e717ff0e7ecfe187f088d69954 \
     --algorithm md5_pass_salt --salt 343141 \
     --mode dictionary --wordlist words.txt
 ```
@@ -195,7 +216,7 @@ ntlm:b4b9b02e6f09a9bd760f388b67351e2b
 ```
 
 ```bash
-python -m password_audit audit --hashlist targets.txt \
+hashcrack audit --hashlist targets.txt \
     --mode dictionary --wordlist words.txt
 ```
 
@@ -206,7 +227,7 @@ record per target plus a batch summary.
 ### 6. Rules — wordlist mutations
 
 ```bash
-python -m password_audit audit a13b856f261e2a517ed184e777a6128a \
+hashcrack audit a13b856f261e2a517ed184e777a6128a \
     --algorithm md5 --mode dictionary --wordlist words.txt \
     --rules append_digits_0_99
 ```
@@ -218,10 +239,10 @@ variants) respects the candidate budget exactly.
 ### 7. History and reports
 
 ```bash
-python -m password_audit history                 # newest first
-python -m password_audit history --limit 10
-python -m password_audit export report.csv --format csv
-python -m password_audit export report.json --format json
+hashcrack history                 # newest first
+hashcrack history --limit 10
+hashcrack export report.csv --format csv
+hashcrack export report.json --format json
 ```
 
 Successful matches include the plaintext/hash pair. Encrypted rows show
@@ -230,7 +251,7 @@ Successful matches include the plaintext/hash pair. Encrypted rows show
 ### 8. Benchmark
 
 ```bash
-python -m password_audit benchmark --seconds 1
+hashcrack benchmark --seconds 1
 ```
 
 Prints per-algorithm candidates/second on this machine to guide budget
@@ -239,7 +260,7 @@ choices (informational; never stored).
 ### 9. Dashboard
 
 ```bash
-python -m password_audit serve        # or .\serve.ps1 / ./serve.sh
+.\serve.ps1              # from the project folder on Windows; ./serve.sh on Linux/macOS
 ```
 
 Open `http://127.0.0.1:8765`. The dashboard offers hash identification with
@@ -480,7 +501,7 @@ powershell -ExecutionPolicy Bypass -File .\setup.ps1
 ./setup.sh
 ```
 
-Both scripts are idempotent (safe to re-run), install the frontend toolchain if needed, use the frontend lockfile for a repeatable install, and run the test suite at the end. If you only need the CLI/backend, `setup.ps1 -SkipFrontend` / `./setup.sh --skip-frontend` skips the frontend installation and build.
+Both scripts are idempotent (safe to re-run), install the frontend toolchain if needed, use the frontend lockfile for a repeatable install, and run the test suite at the end. They install a user-local `hashcrack` launcher so the CLI works from any directory without activating `.venv`; open a new terminal if setup added the launcher directory to PATH. If you only need the CLI/backend, `setup.ps1 -SkipFrontend` / `./setup.sh --skip-frontend` skips the frontend installation and build.
 
 ### Manual setup
 
@@ -508,7 +529,7 @@ cd frontend && npm install && npm run build && cd ..
 
 Shortcut: `./serve.sh` starts the dashboard on the venv's interpreter without activating it (`./serve.sh 9000` chooses a port).
 
-After setup, `python -m password_audit identify ...`, `audit ...`, `history`, `export ...`, and `serve` are available (the installed `password-audit` console script works the same way on every platform); see the CLI contract for options and exit codes. The only platform differences are venv paths (`Scripts\` on Windows, `bin/` elsewhere) and the `python` vs `python3` command name.
+The canonical CLI command is `hashcrack` on all platforms. On Linux and Windows, setup makes it available from any directory; on macOS, use `.venv/bin/hashcrack` or activate `.venv` first. Use `./serve.sh` or `.\serve.ps1` from the project folder to start the dashboard. See the CLI contract for options and exit codes.
 
 ## Performance and Validation
 

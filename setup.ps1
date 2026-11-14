@@ -113,6 +113,21 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "  Python dependencies installed"
 
+# Add a user-local command that works from any directory without activating .venv.
+$userBin = Join-Path $HOME ".local\bin"
+New-Item -ItemType Directory -Force -Path $userBin | Out-Null
+$launcher = Join-Path $userBin "hashcrack.cmd"
+Set-Content -Path $launcher -Encoding ASCII -Value "@echo off`r`n`"$venvPython`" -m password_audit %*`r`n"
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+$pathEntries = @($userPath -split ';' | Where-Object { $_ })
+if ($pathEntries -notcontains $userBin) {
+    $newUserPath = if ([string]::IsNullOrWhiteSpace($userPath)) { $userBin } else { "$userPath;$userBin" }
+    [Environment]::SetEnvironmentVariable("Path", $newUserPath, "User")
+    $env:Path = "$userBin;$env:Path"
+    Step "Added $userBin to your user PATH; new terminals will pick it up."
+}
+Step "Installed the local command: hashcrack"
+
 # --- 4. Node + frontend -------------------------------------------------------
 if ($SkipFrontend) {
     Step "Skipping frontend build (-SkipFrontend)."
@@ -146,6 +161,6 @@ Write-Host ""
 Write-Host "Setup complete!" -ForegroundColor Green
 Write-Host ""
 Write-Host "Run the dashboard:   .\serve.ps1        (http://127.0.0.1:8765)"
-Write-Host "Run the CLI:         .venv\Scripts\python -m password_audit --help"
+Write-Host "Run the CLI:         hashcrack --help (from any directory)"
 Write-Host ""
 Write-Host "Authorized local auditing only - no remote targets, no network access."

@@ -5,13 +5,13 @@ The commands below are the planned v1 interface; final option spelling is confir
 ## Commands
 
 ```text
-python -m password_audit identify HASH
-python -m password_audit audit HASH --algorithm NAME --mode dictionary --wordlist PATH [--workers N]
-python -m password_audit audit HASH --algorithm NAME [--salt VALUE] --mode dictionary --wordlist PATH [--workers N]
-python -m password_audit audit HASH --algorithm NAME [--salt VALUE] --mode brute-force --charset PRESET_OR_TEXT --min-length N --max-length N [--max-candidates N] [--workers N]
-python -m password_audit history [--database PATH]
-python -m password_audit export PATH [--format csv|json]
-python -m password_audit serve [--port PORT]
+hashcrack identify HASH
+hashcrack audit HASH --algorithm NAME --mode dictionary --wordlist PATH [--workers N]
+hashcrack audit HASH --algorithm NAME [--salt VALUE] --mode dictionary --wordlist PATH [--workers N]
+hashcrack audit HASH --algorithm NAME [--salt VALUE] --mode brute-force --charset PRESET_OR_TEXT --min-length N --max-length N [--max-candidates N] [--workers N]
+hashcrack history [--database PATH]
+hashcrack export PATH [--format csv|json]
+hashcrack serve [--port PORT]
 ```
 
 ## Identify

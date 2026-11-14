@@ -89,6 +89,11 @@ Total core (5–9): roughly 7–10 working sessions.
 - Encryption adds an unlock step that can frustrate — kept strictly opt-in; unencrypted mode remains the default.
 - Adaptive formats (research) can stall runs for minutes per candidate — quarantined behind an explicit `--slow-formats` acknowledge flag if ever merged.
 
+## Post-Plan Follow-ups
+
+- Dashboard Auto-fit applies charset, minimum/maximum length, and a candidate budget covering the complete chosen search space under the 10,000,000 hard limit. It does not infer plaintext length; ambiguous algorithms still require an explicit choice.
+- Linux `setup.sh` installs a user-local `hashcrack` launcher in `~/.local/bin`, so the CLI runs from any directory without activating `.venv`. The Windows setup remains unchanged for this launcher.
+
 ## Implementation Notes (recorded during implementation)
 
 - Phases 8–10 completed 2026-11-06. Pause/resume works for single-target dictionary and brute-force runs (refused for hashlist and rule-expanded streams); resume validates dictionary wordlist size.

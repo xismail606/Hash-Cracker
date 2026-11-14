@@ -585,7 +585,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="password_audit",
+        prog="hashcrack",
         description=(
             "Offline hash identification and password auditing for authorized "
             "local targets. No remote logins, no network access."

@@ -1,0 +1,94 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { CHANGELOG } from "../data/changelog.js";
+
+// Full changelog page: a vertical release timeline, newest first. Static
+// markup (no client JS) — only Navbar/Footer/Particles hydrate.
+const latestVersion = CHANGELOG[0]?.version;
+const anchorId = (version: string) => `release-${version.replaceAll(".", "-")}`;
+---
+
+<Layout
+  title="Changelog — Hash Cracker"
+  description="Every Hash Cracker release in order: engine features, hash formats, and dashboard improvements."
+>
+  <header class="mb-12">
+    <h1 class="hero-title">Changelog</h1>
+    <p class="mt-4 max-w-2xl text-sm leading-relaxed text-text-muted sm:text-base">
+      Every Hash Cracker release in order, newest first — engine features,
+      hash formats, and dashboard improvements. Condensed from the repository
+      <span class="mono text-text">CHANGELOG.md</span>.
+    </p>
+  </header>
+
+  <div class="relative">
+    <!-- timeline spine -->
+    <div
+      class="absolute bottom-4 left-[7px] top-4 w-px bg-border"
+      aria-hidden="true"
+    ></div>
+    <div class="flex flex-col gap-8">
+      {
+        CHANGELOG.map((release) => (
+          <article id={anchorId(release.version)} class="relative pl-10 sm:pl-12">
+            <span
+              class="absolute left-[2px] top-7 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 bg-surface"
+              class:list={[
+                release.version === latestVersion
+                  ? "border-accent"
+                  : "border-border",
+              ]}
+              aria-hidden="true"
+            >
+              <span
+                class:list={[
+                  "h-1.5 w-1.5 rounded-full",
+                  release.version === latestVersion ? "bg-accent" : "bg-text-muted/50",
+                ]}
+              />
+            </span>
+            <div class="card overflow-hidden">
+              <div class="card-header flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3">
+                <span class="mono rounded-lg border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs font-bold text-accent">
+                  {release.version}
+                </span>
+                {release.version === latestVersion && (
+                  <span class="pill mono rounded-lg border border-success/40 bg-success/10 text-[10px] font-bold text-success">
+                    Latest
+                  </span>
+                )}
+                <span class="mono text-xs text-text-muted">{release.date}</span>
+                <span class="text-sm font-semibold text-text">{release.title}</span>
+                <a
+                  href={`#${anchorId(release.version)}`}
+                  class="mono ml-auto text-xs text-text-muted/60 transition-colors hover:text-accent"
+                  aria-label={`Link to ${release.version} release notes`}
+                >
+                  #
+                </a>
+              </div>
+              <div class="px-5 py-4">
+                <ul class="flex flex-col gap-2.5 text-sm leading-relaxed text-text-muted">
+                  {release.items.map((item) => (
+                    <li class="flex gap-3">
+                      <span
+                        class="mt-[9px] h-1 w-1 shrink-0 rounded-full bg-accent"
+                        aria-hidden="true"
+                      />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+
+  <p class="mt-10 border-t border-border pt-5 text-xs text-text-muted">
+    Full details in the repository
+    <span class="mono text-accent">CHANGELOG.md</span>.
+  </p>
+</Layout>

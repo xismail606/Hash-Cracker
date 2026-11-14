@@ -1,12 +1,13 @@
-import { ChevronRight, GitBranch, Terminal, Lock, Wifi, WifiOff } from "lucide-react";
+import { ChevronRight, GitBranch, History, Terminal, Lock, Wifi, WifiOff } from "lucide-react";
 
 // Footer adapted from the CyberSec Arsenal Footer: brand column, in-page
 // quick links, safety notes, and a pulsing-dot bottom bar.
+// Quick links point at the dashboard page's step anchors from every page.
 const quickLinks = [
-  { label: "Target hash", href: "#step-hash" },
-  { label: "Audit mode", href: "#step-mode" },
-  { label: "Run", href: "#step-run" },
-  { label: "Audit history", href: "#step-history" },
+  { label: "Target hash", href: "/#step-hash" },
+  { label: "Audit mode", href: "/#step-mode" },
+  { label: "Run", href: "/#step-run" },
+  { label: "Audit history", href: "/#step-history" },
 ];
 
 const safetyNotes = [
@@ -18,7 +19,7 @@ const safetyNotes = [
 export default function Footer() {
   return (
     <footer className="relative mt-14 w-full overflow-hidden border-t border-border py-9">
-      <div className="mx-auto max-w-5xl px-4 sm:px-6">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <div className="grid grid-cols-1 gap-6 border-b border-border pb-7 sm:gap-7 md:grid-cols-4 md:gap-10">
           {/* Column 1: Brand */}
           <div className="col-span-1 flex flex-col gap-3 md:col-span-2">
@@ -40,6 +41,16 @@ export default function Footer() {
               engine, and SQLite history.
             </p>
             <div className="mt-1 flex flex-col gap-1.5">
+              <a
+                href="/changelog"
+                className="group flex w-fit items-center gap-3 text-sm text-text-muted transition-all duration-200 hover:translate-x-1 hover:text-accent"
+                aria-label="Open the changelog page"
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface-raised/60 text-text-muted transition-colors group-hover:border-accent/30 group-hover:text-accent">
+                  <History size={16} aria-hidden="true" />
+                </span>
+                <span>Changelog</span>
+              </a>
               <a
                 href="https://github.com/xismail606"
                 target="_blank"

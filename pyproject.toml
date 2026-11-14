@@ -28,7 +28,7 @@ adaptive = [
 ]
 
 [project.scripts]
-password-audit = "password_audit.cli:main"
+hashcrack = "password_audit.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
