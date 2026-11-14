@@ -267,7 +267,8 @@ Open `http://127.0.0.1:8765`. The dashboard offers hash identification with
 algorithm chips, salted-format selection with a salt field, hashlist upload,
 both audit modes with mutation rules, workers 1–8, live progress with ETA,
 pause/resume, cancellation, per-target result tables, audit history with
-CSV/JSON export and clear-all, and a changelog modal in the navbar.
+CSV/JSON export and clear-all, and a /changelog release-history page linked
+in the navbar.
 
 > **Always open the dashboard through the Flask server** — the JSON API exists only there. The built page opened through any other server shows a "Flask backend not detected" banner instead of failing silently. For frontend development, start the Flask server first so `npm run dev`/`npm run preview` can proxy `/api` to port 8765.
 
