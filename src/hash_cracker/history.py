@@ -117,7 +117,8 @@ class AuditRecord:
             "matched_plaintext": self.matched_plaintext,
             "salt": self.salt,
             "batch_id": self.batch_id,
-            "plaintext_withheld": self.plaintext_withheld,
+            # SQLite stores 0/1; expose a real bool in JSON/CSV payloads.
+            "plaintext_withheld": bool(self.plaintext_withheld),
         }
 
 

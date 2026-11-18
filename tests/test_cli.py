@@ -58,6 +58,48 @@ def test_hashlist_no_store_option_omits_match_plaintext_from_history(tmp_path, c
     assert record.as_dict()["plaintext_withheld"] is True
 
 
+def test_single_target_dictionary_audit_matches_and_records_history(tmp_path, capsys):
+    """Regression: a single-hash audit must not crash before running."""
+    from hashlib import md5
+
+    from hash_cracker.cli import main
+    from hash_cracker.history import connect, list_runs
+
+    wordlist = tmp_path / "words.txt"
+    database = tmp_path / "history.db"
+    wordlist.write_text("wrong\nhashcat\n", encoding="utf-8")
+    target = md5(b"hashcat").hexdigest()
+
+    exit_code = main(
+        [
+            "audit",
+            target,
+            "--algorithm",
+            "md5",
+            "--mode",
+            "dictionary",
+            "--wordlist",
+            str(wordlist),
+            "--database",
+            str(database),
+            "--yes",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Status    : MATCH" in output
+    assert "Plaintext : hashcat" in output
+
+    conn = connect(database)
+    try:
+        record = list_runs(conn)[0]
+    finally:
+        conn.close()
+    assert record.status == "match"
+    assert record.matched_plaintext == "hashcat"
+
+
 def test_version_flag_prints_package_version(capsys):
     from hash_cracker import __version__
     from hash_cracker.cli import main

@@ -241,13 +241,14 @@ def cmd_audit(args: argparse.Namespace) -> int:
         print(f"Invalid audit options: {exc}", file=sys.stderr)
         return EXIT_INVALID
 
-    if not _confirm_retention(args.yes):
-        print("The audit was not started because the retention warning was not acknowledged.",
-              file=sys.stderr)
-        return EXIT_INVALID
     withhold = getattr(args, "no_store_plaintext", False)
     if withhold and getattr(args, "encrypt", False):
         print("--encrypt and --no-store-plaintext are mutually exclusive.", file=sys.stderr)
+        return EXIT_INVALID
+
+    if not _confirm_retention(args.yes):
+        print("The audit was not started because the retention warning was not acknowledged.",
+              file=sys.stderr)
         return EXIT_INVALID
 
     mode_label = "dictionary" if args.mode == "dictionary" else "brute-force"
@@ -309,7 +310,6 @@ def cmd_audit(args: argparse.Namespace) -> int:
                 progress_callback=progress,
             )
         else:
-            assert isinstance(result, RunResult)
             assert target_hash is not None and algorithm is not None
             result = run_audit(
                 target_hash,
@@ -350,16 +350,17 @@ def cmd_audit(args: argparse.Namespace) -> int:
         if result.status == STATUS_MATCH:
             print(f"Plaintext : {result.matched_plaintext}")
             print(f"Hash      : {target_hash}")
-            print(
-                "The recovered plaintext/hash pair above was saved to local SQLite\n"
-                "history as sensitive audit data."
-            )
+            if not withhold:
+                print(
+                    "The recovered plaintext/hash pair above was saved to local SQLite\n"
+                    "history as sensitive audit data."
+                )
 
     plaintext_key = None
     if getattr(args, "encrypt", False):
         passphrase = _resolve_passphrase(args, confirm=not args.passphrase)
         if not passphrase:
-            print("Passphrases do not match or are empty; the audit was not started.",
+            print("Passphrases do not match or are empty; the audit result was not saved.",
                   file=sys.stderr)
             return EXIT_INVALID
         try:
@@ -368,9 +369,9 @@ def cmd_audit(args: argparse.Namespace) -> int:
             conn.close()
         except HistoryError as exc:
             print(f"History encryption failed: {exc}", file=sys.stderr)
-            return EXIT_INVALID
+            return EXIT_STORAGE
 
-    if withhold and targets is None and result.status == STATUS_MATCH:
+    if withhold and result.status == STATUS_MATCH:
         print(
             "Plaintext withheld from local history (--no-store-plaintext);\n"
             "the match above is displayed for this session only."
