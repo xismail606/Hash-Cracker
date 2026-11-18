@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import hashlib
 import struct
+from collections.abc import Callable
+from typing import Any
 
 from .algorithms import SALTED_ALGORITHMS
 
@@ -29,6 +31,41 @@ _ALGORITHM_MAP = {
 }
 
 
+def _hex_digest_func(constructor: Callable[..., Any]) -> Callable[[bytes], str]:
+    def _hash(data: bytes) -> str:
+        return constructor(data).hexdigest()
+
+    return _hash
+
+
+# Direct hashlib constructors per algorithm; ``hashlib.new(name)`` resolves a
+# registry lookup on every call, so the hot path uses these instead.
+# Direct hashlib constructors per algorithm; ``hashlib.new(name)`` resolves a
+# registry lookup on every call, so the hot path uses these instead. Names not
+# exposed as module attributes (sha512_224/sha512_256) keep the new() path.
+_DIGEST_FUNCS: dict[str, Callable[[bytes], str]] = {}
+for _name in _ALGORITHM_MAP:
+    _constructor = getattr(hashlib, _name, None)
+    if _constructor is not None:
+        _DIGEST_FUNCS[_name] = _hex_digest_func(_constructor)
+    else:
+        def _new_digest(data: bytes, _n: str = _name) -> str:
+            return hashlib.new(_n, data).hexdigest()
+
+        _DIGEST_FUNCS[_name] = _new_digest
+
+
+def digest_bytes(data: bytes, algorithm: str) -> str | None:
+    """Digest pre-encoded UTF-8 input, or ``None`` for non-fast formats.
+
+    Covers only the unsalted hashlib formats (``_DIGEST_FUNCS``); callers
+    fall back to :func:`hash_candidate` for NTLM/MD4/LM/RIPEMD-160 (which
+    encode the candidate differently) and for salted/adaptive formats.
+    """
+    digest_func = _DIGEST_FUNCS.get(algorithm)
+    return digest_func(data) if digest_func is not None else None
+
+
 def hash_candidate(candidate: str, algorithm: str, salt: str | None = None) -> str:
     """Return the lowercase hexadecimal digest for one candidate string.
 
@@ -37,10 +74,11 @@ def hash_candidate(candidate: str, algorithm: str, salt: str | None = None) -> s
     ``candidate`` and ``salt`` per the registry's salt position; the salt is
     required for them and must not be supplied for unsalted formats.
     """
-    if algorithm in _ALGORITHM_MAP:
+    digest_func = _DIGEST_FUNCS.get(algorithm)
+    if digest_func is not None:
         if salt is not None:
             raise ValueError(f"Algorithm {algorithm!r} does not take a salt.")
-        return hashlib.new(_ALGORITHM_MAP[algorithm], candidate.encode("utf-8")).hexdigest()
+        return digest_func(candidate.encode("utf-8"))
     if algorithm in SALTED_ALGORITHMS:
         if not salt:
             raise ValueError(f"Algorithm {algorithm!r} requires a salt.")
@@ -48,7 +86,7 @@ def hash_candidate(candidate: str, algorithm: str, salt: str | None = None) -> s
         material = (
             f"{candidate}{salt}" if position == "pass_salt" else f"{salt}{candidate}"
         ).encode("utf-8")
-        return hashlib.new(_ALGORITHM_MAP[base], material).hexdigest()
+        return _DIGEST_FUNCS[base](material)
     if algorithm == "ntlm":
         if salt is not None:
             raise ValueError(f"Algorithm {algorithm!r} does not take a salt.")
