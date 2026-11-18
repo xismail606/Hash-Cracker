@@ -26,7 +26,7 @@ jobs:
       - name: Install package with test dependencies
         run: python -m pip install -e ".[dev,encrypt,adaptive]"
       - name: Run pytest with coverage gate
-        run: python -m pytest tests/ -q --cov=password_audit --cov-report=term-missing:skip-covered
+        run: python -m pytest tests/ -q --cov=hash_cracker --cov-report=term-missing:skip-covered
 
   typecheck:
     runs-on: ubuntu-latest
@@ -65,7 +65,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dashboard-static
-          path: src/password_audit/static/
+          path: src/hash_cracker/static/
           retention-days: 7
 
   lint:
