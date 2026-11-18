@@ -2,8 +2,8 @@
 
 import pytest
 
-from password_audit.algorithms import HashInputError
-from password_audit.bruteforce import (
+from hash_cracker.algorithms import HashInputError
+from hash_cracker.bruteforce import (
     DEFAULT_BUDGET,
     HARD_MAX_BUDGET,
     iter_bruteforce_batches,

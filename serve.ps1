@@ -20,4 +20,4 @@ if (-not (Test-Path $python)) {
     exit 1
 }
 
-& $python -m password_audit serve --port $Port
+& $python -m hash_cracker serve --port $Port

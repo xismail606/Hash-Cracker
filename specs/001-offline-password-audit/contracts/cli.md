@@ -97,7 +97,7 @@ hashcrack serve [--port PORT]
 - Successful matches include the recovered plaintext so the report contains the requested plaintext/hash pair.
 - Supports local history listing and CSV/JSON export.
 - Database and export paths are local filesystem paths.
-- The default database location is `~/.password_audit/history.db`; every command that touches history accepts `--database PATH` (including `audit`, `history`, and `export`) to use another local file.
+- The default database location is `~/.hash_cracker/history.db`; every command that touches history accepts `--database PATH` (including `audit`, `history`, and `export`) to use another local file.
 - `history [--limit N]` lists records newest first; `export PATH [--format csv|json]` writes all records with columns run_id, started_at, completed_at, target_hash, algorithm, mode, status, attempts, elapsed_ms, worker_count, matched_plaintext, salt, batch_id, plaintext_withheld, and target_count. The CSV contains one row per run plus one row per hashlist batch summary (batch rows fill only batch_id, mode, status, attempts, elapsed_ms, worker_count, started_at, and target_count); the JSON file is an object with `runs` and `batches` arrays.
 - Before an audit starts, the CLI prints the sensitive-data retention warning and requires typing `yes`; `--yes` acknowledges non-interactively for scripted use. If the operator declines, the audit does not start.
 - Storage failures after a finished audit are reported with exit code 3 and the run's terminal status is still printed; the run is not silently lost.

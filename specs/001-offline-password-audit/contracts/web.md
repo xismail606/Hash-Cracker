@@ -8,7 +8,7 @@ The dashboard uses Astro, React, JavaScript, and Tailwind CSS. Flask serves the 
 - Hashes, candidate data, and results remain on the local machine; the application makes no external requests.
 - State-changing routes require same-origin/CSRF protection: `GET /api/session` issues a token (returned in JSON and set as the `pa_csrf` cookie) and `POST` routes must repeat it in the `X-CSRF-Token` header; requests with a foreign `Origin`/`Referer` are rejected.
 - One dashboard job may run at a time; the CLI may be used separately. A second start request receives HTTP 409.
-- Start the server with `hashcrack serve [--port PORT]` (default port 8765). It serves the Astro build from `src/password_audit/static/`; build it with `npm install && npm run build` inside `frontend/` (Astro writes the output to that static folder). If the build is missing, the server starts and explains how to build the frontend instead of serving a broken page.
+- Start the server with `hashcrack serve [--port PORT]` (default port 8765). It serves the Astro build from `src/hash_cracker/static/`; build it with `npm install && npm run build` inside `frontend/` (Astro writes the output to that static folder). If the build is missing, the server starts and explains how to build the frontend instead of serving a broken page.
 - The JSON API exists only on the Flask server. Opening the built page through a static server (`npm run preview`, a plain file host) shows a "Flask backend not detected" banner instead of silently failing; for frontend development, `npm run dev` and `npm run preview` proxy `/api` to `http://127.0.0.1:8765`, so start the Flask server first.
 
 ## Dashboard Form
@@ -46,7 +46,7 @@ The dashboard uses Astro, React, JavaScript, and Tailwind CSS. Flask serves the 
 - Pause/resume buttons follow the job state machine (running → pausing → paused → resuming → running) and are available for all run types; the API returns an explicit error only when the job is not in a pausable state, which the dashboard surfaces.
 - The history card offers CSV/JSON download buttons (`GET /api/export`) and shows encrypted rows as `<encrypted>` with a passphrase unlock form until `POST /api/history/unlock` succeeds.
 - Shows the recovered plaintext and target hash for successful runs after the required acknowledgement.
-- Persists successful plaintext/hash pairs and run metadata in local SQLite (same default database as the CLI, `~/.password_audit/history.db`).
+- Persists successful plaintext/hash pairs and run metadata in local SQLite (same default database as the CLI, `~/.hash_cracker/history.db`).
 - Paused jobs survive a server restart: the job record and its uploaded wordlist/hashlist move to `<database dir>/paused_jobs/` and are restored on startup in the `paused` state. Resuming deletes that record; cancelling a paused job finalizes it as cancelled and deletes the record and kept uploads; starting a new audit discards a restored paused job. Runs that were executing (not paused) at shutdown are not resumable. The encryption passphrase is never persisted. Paused-job artifacts are restricted to the current user on POSIX and abandoned records older than 7 days are removed at startup.
 - Removes temporary wordlist uploads after completion, cancellation, validation failure, and application shutdown (graceful shutdown; a force-killed process cannot run its cleanup hook). Uploads belonging to a paused job are exempt from temp cleanup because they move to the paused-job store.
 

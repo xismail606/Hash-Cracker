@@ -1,6 +1,6 @@
 """Wordlist streaming tests: chunking, line handling, encoding resilience."""
 
-from password_audit.candidates import count_dictionary_lines, iter_wordlist_batches
+from hash_cracker.candidates import count_dictionary_lines, iter_wordlist_batches
 
 
 def write_wordlist(tmp_path, text):

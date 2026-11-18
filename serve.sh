@@ -28,4 +28,4 @@ if [ -z "$python_bin" ]; then
     exit 1
 fi
 
-exec "$python_bin" -m password_audit serve --port "$port"
+exec "$python_bin" -m hash_cracker serve --port "$port"

@@ -1,6 +1,6 @@
 import pytest
 
-from password_audit.cli import _progress_limit
+from hash_cracker.cli import _progress_limit
 
 
 @pytest.mark.parametrize(
@@ -18,8 +18,8 @@ def test_progress_limit_follows_known_run_boundaries(total_space, budget, expect
 def test_hashlist_no_store_option_omits_match_plaintext_from_history(tmp_path, capsys):
     from hashlib import md5
 
-    from password_audit.cli import main
-    from password_audit.history import connect, list_runs
+    from hash_cracker.cli import main
+    from hash_cracker.history import connect, list_runs
 
     wordlist = tmp_path / "words.txt"
     hashlist = tmp_path / "hashes.txt"
@@ -59,8 +59,8 @@ def test_hashlist_no_store_option_omits_match_plaintext_from_history(tmp_path, c
 
 
 def test_version_flag_prints_package_version(capsys):
-    from password_audit import __version__
-    from password_audit.cli import main
+    from hash_cracker import __version__
+    from hash_cracker.cli import main
 
     with pytest.raises(SystemExit) as excinfo:
         main(["--version"])
@@ -74,7 +74,7 @@ def test_declared_versions_agree():
     import tomllib
     from pathlib import Path
 
-    from password_audit import __version__
+    from hash_cracker import __version__
 
     root = Path(__file__).resolve().parents[1]
     pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
@@ -90,7 +90,7 @@ def test_export_includes_hashlist_batches_in_csv_and_json(tmp_path, capsys):
     import json
     from hashlib import md5
 
-    from password_audit.cli import main
+    from hash_cracker.cli import main
 
     wordlist = tmp_path / "words.txt"
     hashlist = tmp_path / "hashes.txt"

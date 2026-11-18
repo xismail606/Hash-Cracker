@@ -31,13 +31,13 @@ adaptive = [
 ]
 
 [project.scripts]
-hashcrack = "password_audit.cli:main"
+hashcrack = "hash_cracker.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-password_audit = ["static/**/*"]
+hash_cracker = ["static/**/*"]
 
 [tool.ruff]
 line-length = 100
@@ -56,8 +56,8 @@ ignore = [
 ]
 
 [tool.coverage.run]
-source = ["src/password_audit"]
-omit = ["src/password_audit/__main__.py"]
+source = ["src/hash_cracker"]
+omit = ["src/hash_cracker/__main__.py"]
 
 [tool.coverage.report]
 # Guards against coverage regressions; raise as the suite grows.
@@ -66,7 +66,7 @@ skip_covered = true
 
 [tool.mypy]
 python_version = "3.11"
-files = ["src/password_audit"]
+files = ["src/hash_cracker"]
 # The web layer is largely closures over Flask state; still check their bodies.
 check_untyped_defs = true
 warn_unused_ignores = true

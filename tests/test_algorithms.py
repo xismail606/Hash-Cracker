@@ -2,7 +2,7 @@
 
 import pytest
 
-from password_audit.algorithms import (
+from hash_cracker.algorithms import (
     ALGORITHM_LENGTHS,
     ALGORITHM_NAMES,
     HashInputError,
@@ -101,7 +101,7 @@ class TestSelectAlgorithm:
 
 
 def test_algorithm_registry_is_consistent():
-    from password_audit.algorithms import is_adaptive
+    from hash_cracker.algorithms import is_adaptive
 
     # Adaptive formats verify against full hash strings; they have no fixed
     # digest length entry.

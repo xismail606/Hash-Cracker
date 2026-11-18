@@ -36,7 +36,7 @@ export async function apiFetch(path, options = {}) {
     const message =
       payload.error ||
       (response.status === 404
-        ? "API route not found — this page is not being served by the Flask backend. Run `python -m password_audit serve` and open the printed http://127.0.0.1 URL."
+        ? "API route not found — this page is not being served by the Flask backend. Run `python -m hash_cracker serve` and open the printed http://127.0.0.1 URL."
         : `Request failed (${response.status})`);
     throw new Error(message);
   }

@@ -1,4 +1,4 @@
-﻿# One-command setup for Hash Cracker (Windows).
+# One-command setup for Hash Cracker (Windows).
 # Downloads/installs everything needed to run the project:
 #   Python venv + package (with optional extras), Node deps, frontend build.
 #
@@ -117,7 +117,7 @@ Write-Host "  Python dependencies installed"
 $userBin = Join-Path $HOME ".local\bin"
 New-Item -ItemType Directory -Force -Path $userBin | Out-Null
 $launcher = Join-Path $userBin "hashcrack.cmd"
-Set-Content -Path $launcher -Encoding ASCII -Value "@echo off`r`n`"$venvPython`" -m password_audit %*`r`n"
+Set-Content -Path $launcher -Encoding ASCII -Value "@echo off`r`n`"$venvPython`" -m hash_cracker %*`r`n"
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 $pathEntries = @($userPath -split ';' | Where-Object { $_ })
 if ($pathEntries -notcontains $userBin) {

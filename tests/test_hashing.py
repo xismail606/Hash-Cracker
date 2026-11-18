@@ -9,7 +9,7 @@ from typing import ClassVar
 
 import pytest
 
-from password_audit.hashing import _md4_hex, hash_candidate, verify_candidate
+from hash_cracker.hashing import _md4_hex, hash_candidate, verify_candidate
 
 RFC1320_VECTORS = {
     b"": "31d6cfe0d16ae931b73c59d7e0c089c0",
@@ -77,7 +77,7 @@ class TestHashcatExamples:
     def test_digest_bytes_matches_hash_candidate_for_fast_formats(self):
         # The batch fast path (pre-encoded bytes) must agree with the
         # per-candidate path for every hashlib-backed algorithm.
-        from password_audit.hashing import digest_bytes
+        from hash_cracker.hashing import digest_bytes
 
         for algorithm, _, _ in HASHCAT_EXAMPLES:
             if algorithm in ("ntlm", "md4", "lm"):
@@ -88,7 +88,7 @@ class TestHashcatExamples:
             )
 
     def test_digest_bytes_returns_none_for_non_hashlib_formats(self):
-        from password_audit.hashing import digest_bytes
+        from hash_cracker.hashing import digest_bytes
 
         assert digest_bytes(b"hashcat", "ntlm") is None
         assert digest_bytes(b"hashcat", "md4") is None
@@ -172,7 +172,7 @@ class TestPhase10Formats:
         assert verify_candidate("nope", "sha512crypt", stored) is False
 
     def test_adaptive_prefix_detection(self):
-        from password_audit.algorithms import assess_hash
+        from hash_cracker.algorithms import assess_hash
 
         stored = "$2a$05$MBCzKhG1KhezLh.0LRa0Kuw12nLJtpHy6DIaU.JAnqJUDYspHC.Ou"
         assessment = assess_hash(stored)

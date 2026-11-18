@@ -72,7 +72,7 @@ specs/001-offline-password-audit/
 ```text
 pyproject.toml
 README.md
-src/password_audit/
+src/hash_cracker/
 ├── __init__.py
 ├── __main__.py
 ├── algorithms.py       # Shape recognition and algorithm selection

@@ -426,7 +426,7 @@ export default function AuditDashboard() {
             The dashboard API lives on the local Flask server only. Stop this
             server and run{" "}
             <code className="mono rounded border border-border bg-surface px-1">
-              python -m password_audit serve
+              python -m hash_cracker serve
             </code>{" "}
             in the project root, then open the printed http://127.0.0.1 URL. (For
             frontend development, start the Flask server on port 8765 first so{" "}

@@ -34,7 +34,7 @@ cd frontend && npm install && npm run build && cd ..
 
 Shortcut that skips activation on both platforms: `.\serve.ps1` (Windows) or `./serve.sh` (Linux/macOS) starts the dashboard on the venv's interpreter.
 
-The Python package includes Flask and Passlib (NTLM). The Astro build writes the dashboard into `src/password_audit/static/`, which the Flask server serves. Internet access is needed only for installation; audits themselves are local.
+The Python package includes Flask and Passlib (NTLM). The Astro build writes the dashboard into `src/hash_cracker/static/`, which the Flask server serves. Internet access is needed only for installation; audits themselves are local.
 
 ## Identify Hash Formats
 
@@ -154,7 +154,7 @@ hashcrack export report.csv --format csv
 hashcrack export report.json --format json
 ```
 
-Verified behavior: records include algorithm, mode, target hash, status, attempts, elapsed time, worker count, and timestamp. Successful matches include the plaintext/hash pair required by the assignment. The default database is `~/.password_audit/history.db`; pass `--database PATH` to use a different local file.
+Verified behavior: records include algorithm, mode, target hash, status, attempts, elapsed time, worker count, and timestamp. Successful matches include the plaintext/hash pair required by the assignment. The default database is `~/.hash_cracker/history.db`; pass `--database PATH` to use a different local file.
 
 ## Validation Scenarios
 

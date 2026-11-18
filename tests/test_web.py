@@ -11,13 +11,13 @@ import time
 
 import pytest
 
-from password_audit.web import create_app
+from hash_cracker.web import create_app
 
 
 @pytest.fixture()
 def app(tmp_path, monkeypatch):
     # Shrink the upload limit so the oversize-rejection test stays cheap.
-    monkeypatch.setattr("password_audit.web.MAX_UPLOAD_BYTES", 4096)
+    monkeypatch.setattr("hash_cracker.web.MAX_UPLOAD_BYTES", 4096)
     return create_app(static_folder=tmp_path / "no-frontend", db_path=tmp_path / "test-history.db")
 
 
@@ -486,7 +486,7 @@ class TestPausedJobSurvivesRestart:
         return job_id
 
     def test_paused_job_restored_after_restart_and_resumes(self, tmp_path, client, csrf):
-        from password_audit.web import create_app
+        from hash_cracker.web import create_app
 
         job_id = self._pause_job(client, csrf)
 
@@ -519,7 +519,7 @@ class TestPausedJobSurvivesRestart:
         assert not (tmp_path / "paused_jobs" / f"{job_id}.json").exists()
 
     def test_cancel_after_restart_discards_persisted_job(self, tmp_path, client, csrf):
-        from password_audit.web import create_app
+        from hash_cracker.web import create_app
 
         job_id = self._pause_job(client, csrf)
         restarted_app = create_app(
@@ -540,7 +540,7 @@ class TestPausedJobSurvivesRestart:
         assert list((tmp_path / "paused_jobs").iterdir()) == []
 
     def test_new_audit_after_restart_abandons_persisted_job(self, tmp_path, client, csrf):
-        from password_audit.web import create_app
+        from hash_cracker.web import create_app
 
         old_job_id = self._pause_job(client, csrf)
         restarted_app = create_app(
@@ -573,7 +573,7 @@ class TestPausedJobSurvivesRestart:
     def test_stale_paused_records_are_cleaned_up(self, tmp_path, client, csrf):
         import json as json_mod
 
-        from password_audit.web import create_app
+        from hash_cracker.web import create_app
 
         job_id = self._pause_job(client, csrf)
         paused = tmp_path / "paused_jobs"
@@ -655,7 +655,7 @@ class TestPlaintextWithholding:
 
 class TestEncryption:
     def test_unlock_decrypts_history_display(self, tmp_path):
-        from password_audit.history import connect, init_encryption, record_run
+        from hash_cracker.history import connect, init_encryption, record_run
 
         app = create_app(static_folder=tmp_path / "no-frontend", db_path=tmp_path / "enc.db")
         client = app.test_client()

@@ -4,15 +4,15 @@ import react from "@astrojs/react";
 import tailwindcss from "@tailwindcss/vite";
 
 // The dashboard is built as a fully static site and served by the local
-// Flask server (python -m password_audit serve). The build output goes to
-// src/password_audit/static/ so Flask can serve it directly.
+// Flask server (python -m hash_cracker serve). The build output goes to
+// src/hash_cracker/static/ so Flask can serve it directly.
 export default defineConfig({
   integrations: [react()],
   vite: {
     plugins: [tailwindcss()],
     // `astro dev` and `astro preview` proxy /api to the local Flask backend so
     // the dashboard works during development. Loopback only; for the real
-    // dashboard run `python -m password_audit serve`, which serves the built
+    // dashboard run `python -m hash_cracker serve`, which serves the built
     // assets and the API from one server.
     server: {
       proxy: {
@@ -25,6 +25,6 @@ export default defineConfig({
       },
     },
   },
-  outDir: "../src/password_audit/static",
+  outDir: "../src/hash_cracker/static",
   emptyOutDir: true,
 });

@@ -16,13 +16,13 @@ Every implementation task uses `- [ ] T### [P?] Description with file path`. `[P
 
 **Phase validation**: hashcat salted examples (modes 10 and 1410, plaintext `hashcat`) audit to MATCH with the example salt via CLI and dashboard; a wrong salt yields no_match; the salt appears in the history record.
 
-- [x] T034 Add the `SALTED_ALGORITHMS` registry (name → base digest, salt position) and salted-format validation to `src/password_audit/algorithms.py`.
-- [x] T035 Add position-aware salted digest adapters to `src/password_audit/hashing.py`.
-- [x] T036 Pass the run salt through `run_audit` and the worker in `src/password_audit/engine.py`.
-- [x] T037 Add `--salt` to the audit command and wire it through validation in `src/password_audit/cli.py`.
-- [x] T038 Add the salt field to `POST /api/audits` and dashboard validation in `src/password_audit/web.py`.
+- [x] T034 Add the `SALTED_ALGORITHMS` registry (name → base digest, salt position) and salted-format validation to `src/hash_cracker/algorithms.py`.
+- [x] T035 Add position-aware salted digest adapters to `src/hash_cracker/hashing.py`.
+- [x] T036 Pass the run salt through `run_audit` and the worker in `src/hash_cracker/engine.py`.
+- [x] T037 Add `--salt` to the audit command and wire it through validation in `src/hash_cracker/cli.py`.
+- [x] T038 Add the salt field to `POST /api/audits` and dashboard validation in `src/hash_cracker/web.py`.
 - [x] T039 Add the salt input to the dashboard form (shown for salted formats) in `frontend/src/components/AuditDashboard.jsx`.
-- [x] T040 Store the salt in `audit_runs` with an additive schema migration in `src/password_audit/history.py`.
+- [x] T040 Store the salt in `audit_runs` with an additive schema migration in `src/hash_cracker/history.py`.
 - [x] T041 [P] Update the CLI and web contracts for salted formats in `specs/001-offline-password-audit/contracts/cli.md` and `specs/001-offline-password-audit/contracts/web.md`.
 - [x] T042 Validate salted formats against hashcat example hashes (modes 10, 20, 110, 120, 1410, 1420, 1710, 1720) and update the quickstart in `specs/001-offline-password-audit/quickstart.md`.
 
@@ -34,13 +34,13 @@ Every implementation task uses `- [ ] T### [P?] Description with file path`. `[P
 
 **Phase validation**: A three-line hashlist (MD5, SHA-256, NTLM, all `hashcat`) with a matching wordlist yields three per-target matches plus one run summary; total attempts equal the sum of per-target attempts.
 
-- [x] T043 Add hashlist parsing (`algorithm:hash` optional prefix, skip blanks and `#` comments, whole-file validation) to `src/password_audit/candidates.py`.
-- [x] T044 Implement the multi-target worker (targets dict keyed by digest, single hashing pass, per-target match reporting) in `src/password_audit/engine.py`.
-- [x] T045 Add `--hashlist PATH` to the audit command (mutually exclusive with a positional hash) in `src/password_audit/cli.py`.
-- [x] T046 Add hashlist upload and per-target result tracking to `POST /api/audits`, `GET /api/audits/{job_id}` in `src/password_audit/web.py`.
+- [x] T043 Add hashlist parsing (`algorithm:hash` optional prefix, skip blanks and `#` comments, whole-file validation) to `src/hash_cracker/candidates.py`.
+- [x] T044 Implement the multi-target worker (targets dict keyed by digest, single hashing pass, per-target match reporting) in `src/hash_cracker/engine.py`.
+- [x] T045 Add `--hashlist PATH` to the audit command (mutually exclusive with a positional hash) in `src/hash_cracker/cli.py`.
+- [x] T046 Add hashlist upload and per-target result tracking to `POST /api/audits`, `GET /api/audits/{job_id}` in `src/hash_cracker/web.py`.
 - [x] T047 Render the per-target results table (hash, algorithm, status, plaintext) in `frontend/src/components/AuditDashboard.jsx`.
-- [x] T048 Add the `audit_batches` table and per-target result rows with an additive migration in `src/password_audit/history.py`.
-- [x] T049 Include batch results in CSV/JSON export in `src/password_audit/history.py`.
+- [x] T048 Add the `audit_batches` table and per-target result rows with an additive migration in `src/hash_cracker/history.py`.
+- [x] T049 Include batch results in CSV/JSON export in `src/hash_cracker/history.py`.
 - [x] T050 [P] Update the CLI and web contracts for hashlist mode in `specs/001-offline-password-audit/contracts/cli.md` and `specs/001-offline-password-audit/contracts/web.md`.
 - [x] T051 Validate the three-target synthetic scenario and update the quickstart in `specs/001-offline-password-audit/quickstart.md`.
 
@@ -52,9 +52,9 @@ Every implementation task uses `- [ ] T### [P?] Description with file path`. `[P
 
 **Phase validation**: A two-line wordlist with the "append digits 0–99" preset produces `hash0…hash99` style candidates; total attempts respect the budget exactly; a match found only via a mutated candidate (e.g. `hashcat1` from wordlist line `hashcat`) is reported with its mutated plaintext.
 
-- [x] T052 Create `src/password_audit/rules.py` with the preset registry (capitalize, upper, lower, append digits 0–N, prepend digits, leetspeak, append year) operating on candidate batches.
-- [x] T053 Wrap dictionary batch sources with rule expansion in `src/password_audit/engine.py` (budget counts expanded candidates).
-- [x] T054 Add `--rules PRESET` to the audit command (dictionary mode) in `src/password_audit/cli.py`.
+- [x] T052 Create `src/hash_cracker/rules.py` with the preset registry (capitalize, upper, lower, append digits 0–N, prepend digits, leetspeak, append year) operating on candidate batches.
+- [x] T053 Wrap dictionary batch sources with rule expansion in `src/hash_cracker/engine.py` (budget counts expanded candidates).
+- [x] T054 Add `--rules PRESET` to the audit command (dictionary mode) in `src/hash_cracker/cli.py`.
 - [x] T055 Add the rules preset select to the dashboard (dictionary mode) in `frontend/src/components/AuditDashboard.jsx`.
 - [x] T056 [P] Document rule presets and budget semantics in `specs/001-offline-password-audit/contracts/cli.md` and `specs/001-offline-password-audit/contracts/web.md`.
 - [x] T057 Validate the mutated-match scenario and update the quickstart in `specs/001-offline-password-audit/quickstart.md`.
@@ -67,13 +67,13 @@ Every implementation task uses `- [ ] T### [P?] Description with file path`. `[P
 
 **Phase validation**: `benchmark` prints per-algorithm candidates/second twice with consistent results; a paused web job resumes and completes with contiguous attempt accounting; dashboard export downloads valid CSV; a no-plaintext match stores no plaintext but a clear withheld marker.
 
-- [x] T058 Create `src/password_audit/benchmark.py` (2 s wall-clock slice per algorithm via the existing worker) and the `benchmark` CLI command in `src/password_audit/cli.py`.
-- [x] T059 Implement pause/resume (offset checkpoint, dictionary byte position validation, pool release) in `src/password_audit/engine.py`.
-- [x] T060 Add `POST /api/audits/{job_id}/pause` and resume handling in `src/password_audit/web.py`.
+- [x] T058 Create `src/hash_cracker/benchmark.py` (2 s wall-clock slice per algorithm via the existing worker) and the `benchmark` CLI command in `src/hash_cracker/cli.py`.
+- [x] T059 Implement pause/resume (offset checkpoint, dictionary byte position validation, pool release) in `src/hash_cracker/engine.py`.
+- [x] T060 Add `POST /api/audits/{job_id}/pause` and resume handling in `src/hash_cracker/web.py`.
 - [x] T061 Add the pause/resume button state machine in `frontend/src/components/AuditDashboard.jsx`.
-- [x] T062 Add `GET /api/export?format=csv|json` in `src/password_audit/web.py` and download buttons in `frontend/src/components/AuditDashboard.jsx`.
-- [x] T063 Compute and display ETA (attempts/second × remaining) in CLI progress and the dashboard in `src/password_audit/cli.py` and `frontend/src/components/AuditDashboard.jsx`.
-- [x] T064 Add the `--no-store-plaintext` CLI flag and dashboard checkbox (run-level, withheld marker in history) in `src/password_audit/cli.py`, `src/password_audit/engine.py`, `src/password_audit/history.py`, and `frontend/src/components/AuditDashboard.jsx`.
+- [x] T062 Add `GET /api/export?format=csv|json` in `src/hash_cracker/web.py` and download buttons in `frontend/src/components/AuditDashboard.jsx`.
+- [x] T063 Compute and display ETA (attempts/second × remaining) in CLI progress and the dashboard in `src/hash_cracker/cli.py` and `frontend/src/components/AuditDashboard.jsx`.
+- [x] T064 Add the `--no-store-plaintext` CLI flag and dashboard checkbox (run-level, withheld marker in history) in `src/hash_cracker/cli.py`, `src/hash_cracker/engine.py`, `src/hash_cracker/history.py`, and `frontend/src/components/AuditDashboard.jsx`.
 - [x] T065 Make Auto-fit LM-aware and apply charset, length, and candidate-budget values to the dashboard form in `frontend/src/components/AuditDashboard.jsx`.
 - [x] T066 [P] Update the CLI and web contracts for all phase-8 features in `specs/001-offline-password-audit/contracts/cli.md` and `specs/001-offline-password-audit/contracts/web.md`.
 
@@ -90,7 +90,7 @@ Every implementation task uses `- [ ] T### [P?] Description with file path`. `[P
 - [x] T069 Write `tests/test_engine.py` — golden tests for current attempt accounting (single/batch, match offset, budget exhaustion, cancellation) before multi-target changes land in T044.
 - [x] T070 Write `tests/test_web.py` (Flask test client: session/CSRF, identify, audit start, upload limits, history, clear, pause/resume, export).
 - [x] T071 Add `.github/workflows/ci.yml` running pytest on windows-latest and ubuntu-latest, and add the `pytest` dev dependency to `pyproject.toml`.
-- [x] T072 Add optional at-rest encryption of `matched_plaintext` (Fernet, passphrase-derived key, unlock prompt in CLI, unlock field in dashboard) in `src/password_audit/history.py`, `src/password_audit/cli.py`, and `frontend/src/components/AuditDashboard.jsx`.
+- [x] T072 Add optional at-rest encryption of `matched_plaintext` (Fernet, passphrase-derived key, unlock prompt in CLI, unlock field in dashboard) in `src/hash_cracker/history.py`, `src/hash_cracker/cli.py`, and `frontend/src/components/AuditDashboard.jsx`.
 - [x] T073 [P] Update README and the quickstart for the test suite, CI badge, and encryption mode.
 
 **Checkpoint**: The core behaviors are regression-protected on two platforms; plaintext-at-rest is operator-controlled.

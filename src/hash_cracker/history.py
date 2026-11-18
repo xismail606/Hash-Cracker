@@ -1,7 +1,7 @@
 """Local SQLite audit history: schema, run records, listing, and exports.
 
 The database stays on the local machine. The default location is
-``~/.password_audit/history.db``; callers may pass another local path.
+``~/.hash_cracker/history.db``; callers may pass another local path.
 Successful matches persist the recovered plaintext together with the target
 hash because the project brief requires the plaintext/hash pair for
 credential-policy reporting; operators are warned before a run begins.
@@ -18,7 +18,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-DEFAULT_DB_PATH = Path.home() / ".password_audit" / "history.db"
+DEFAULT_DATA_DIR = Path.home() / ".hash_cracker"
+LEGACY_DATA_DIR = Path.home() / ".password_audit"
+DEFAULT_DB_PATH = DEFAULT_DATA_DIR / "history.db"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS audit_runs (
@@ -115,7 +117,7 @@ class AuditRecord:
             "matched_plaintext": self.matched_plaintext,
             "salt": self.salt,
             "batch_id": self.batch_id,
-            "plaintext_withheld": bool(self.plaintext_withheld),
+            "plaintext_withheld": self.plaintext_withheld,
         }
 
 
@@ -128,6 +130,10 @@ def connect(db_path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
     """Open (and initialize) the local history database."""
     path = Path(db_path).expanduser()
     try:
+        # Move existing history and paused-job files to the branded directory.
+        # If both directories exist, leave the legacy directory untouched.
+        if path == DEFAULT_DB_PATH and LEGACY_DATA_DIR.exists() and not DEFAULT_DATA_DIR.exists():
+            LEGACY_DATA_DIR.rename(DEFAULT_DATA_DIR)
         path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(path))
         conn.executescript(SCHEMA)
@@ -198,7 +204,7 @@ def record_run(
             ),
         )
         conn.commit()
-        return int(cursor.lastrowid or 0)
+        return cursor.lastrowid or 0
     except sqlite3.Error as exc:
         raise HistoryError(f"Cannot write the audit record to local history: {exc}") from exc
 
@@ -231,7 +237,7 @@ def clear_runs(conn: sqlite3.Connection) -> int:
         run_cursor = conn.execute("DELETE FROM audit_runs")
         batch_cursor = conn.execute("DELETE FROM audit_batches")
         conn.commit()
-        return int(run_cursor.rowcount or 0) + int(batch_cursor.rowcount or 0)
+        return (run_cursor.rowcount or 0) + (batch_cursor.rowcount or 0)
     except sqlite3.Error as exc:
         conn.rollback()
         raise HistoryError(f"Cannot clear local audit history: {exc}") from exc

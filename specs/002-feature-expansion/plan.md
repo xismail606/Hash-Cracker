@@ -51,7 +51,7 @@ Five planned phases on top of the completed v1 tool: (5) salted fast hashes, (6)
 ## Project Structure (new/changed files)
 
 ```text
-src/password_audit/
+src/hash_cracker/
 ├── algorithms.py        # SALTED_ALGORITHMS registry + salted validation
 ├── hashing.py           # salted adapters (position-aware)
 ├── rules.py             # NEW: mutation presets and batch expansion

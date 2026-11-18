@@ -2,9 +2,9 @@
 
 import pytest
 
-from password_audit.algorithms import HashInputError
-from password_audit.candidates import parse_hashlist
-from password_audit.rules import iter_rule_expanded, resolve_rules_preset
+from hash_cracker.algorithms import HashInputError
+from hash_cracker.candidates import parse_hashlist
+from hash_cracker.rules import iter_rule_expanded, resolve_rules_preset
 
 
 class TestParseHashlist:

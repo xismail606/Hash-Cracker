@@ -150,7 +150,7 @@ if [ "$(uname -s)" = "Linux" ]; then
     user_bin="$HOME/.local/bin"
     launcher="$user_bin/hashcrack"
     mkdir -p "$user_bin"
-    printf '#!/usr/bin/env bash\nexec %q -m password_audit "$@"\n' "$venv_python" > "$launcher"
+    printf '#!/usr/bin/env bash\nexec %q -m hash_cracker "$@"\n' "$venv_python" > "$launcher"
     chmod 755 "$launcher"
 
     case ":$PATH:" in

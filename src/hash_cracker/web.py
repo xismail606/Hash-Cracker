@@ -128,7 +128,7 @@ def create_app(
     app.config["_job"] = None
     app.config["_decrypt_key"] = None
     # Temporary upload directory cleaned up on shutdown.
-    upload_dir = Path(tempfile.mkdtemp(prefix="password_audit_uploads_"))
+    upload_dir = Path(tempfile.mkdtemp(prefix="hash_cracker_uploads_"))
     app.config["_upload_dir"] = upload_dir
 
     def _cleanup_uploads() -> None:

@@ -10,9 +10,9 @@ import threading
 
 import pytest
 
-from password_audit.bruteforce import iter_bruteforce_batches, resolve_charset
-from password_audit.candidates import iter_wordlist_batches
-from password_audit.engine import (
+from hash_cracker.bruteforce import iter_bruteforce_batches, resolve_charset
+from hash_cracker.candidates import iter_wordlist_batches
+from hash_cracker.engine import (
     STATUS_BUDGET_EXHAUSTED,
     STATUS_CANCELLED,
     STATUS_MATCH,
@@ -226,7 +226,7 @@ class TestResumeAccounting:
 
 class TestHashlistAudit:
     def test_multi_target_single_pass(self):
-        from password_audit.engine import run_hashlist_audit
+        from hash_cracker.engine import run_hashlist_audit
 
         targets = [
             {"id": 0, "algorithm": "md5", "hash": hashlib.md5(b"hashcat").hexdigest()},
@@ -243,7 +243,7 @@ class TestHashlistAudit:
         assert statuses[0]["match_at_attempt"] == 1
 
     def test_16hex_lm_target_matches_first_des_block(self):
-        from password_audit.engine import run_hashlist_audit
+        from hash_cracker.engine import run_hashlist_audit
 
         targets = [
             {"id": 0, "algorithm": "lm", "hash": "299bd128c1101fd6"},
@@ -264,7 +264,7 @@ class TestHashlistAudit:
         assert by_id[1]["match_at_attempt"] == 2
 
     def test_different_targets_match_later_in_the_same_batch(self):
-        from password_audit.engine import run_hashlist_audit
+        from hash_cracker.engine import run_hashlist_audit
 
         targets = [
             {"id": 0, "algorithm": "md5", "hash": hashlib.md5(b"first").hexdigest()},
@@ -282,7 +282,7 @@ class TestHashlistAudit:
         assert by_id[1]["matched_plaintext"] == "second"
 
     def test_budget_truncates_oversized_hashlist_batch(self):
-        from password_audit.engine import run_hashlist_audit
+        from hash_cracker.engine import run_hashlist_audit
 
         targets = [
             {"id": 0, "algorithm": "sha256", "hash": hashlib.sha256(b"later").hexdigest()}
@@ -297,7 +297,7 @@ class TestHashlistAudit:
         assert result.targets[0]["status"] == STATUS_NO_MATCH
 
     def test_fully_covered_hashlist_search_is_no_match(self):
-        from password_audit.engine import run_hashlist_audit
+        from hash_cracker.engine import run_hashlist_audit
 
         targets = [
             {"id": 0, "algorithm": "sha256", "hash": hashlib.sha256(b"absent").hexdigest()}
@@ -311,7 +311,7 @@ class TestHashlistAudit:
         assert result.attempts == 2
 
     def test_pause_then_resume_carries_matches_and_accounting(self):
-        from password_audit.engine import run_hashlist_audit
+        from hash_cracker.engine import run_hashlist_audit
 
         targets = [
             {"id": 0, "algorithm": "md5", "hash": hashlib.md5(b"early").hexdigest()},
@@ -351,7 +351,7 @@ class TestHashlistAudit:
         } == {0: "early", 1: "later"}
 
     def test_partial_match_exhaustion(self):
-        from password_audit.engine import STATUS_NO_MATCH, run_hashlist_audit
+        from hash_cracker.engine import STATUS_NO_MATCH, run_hashlist_audit
 
         targets = [
             {"id": 0, "algorithm": "md5", "hash": hashlib.md5(b"hashcat").hexdigest()},
@@ -365,7 +365,7 @@ class TestHashlistAudit:
         assert by_id[1]["status"] == STATUS_NO_MATCH
 
     def test_all_miss_reports_no_match(self):
-        from password_audit.engine import STATUS_NO_MATCH, run_hashlist_audit
+        from hash_cracker.engine import STATUS_NO_MATCH, run_hashlist_audit
 
         targets = [{"id": 0, "algorithm": "md5", "hash": hashlib.md5(b"absent").hexdigest()}]
         result = run_hashlist_audit(targets, iter([["one", "two"]]), workers=1)
