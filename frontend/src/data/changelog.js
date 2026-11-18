@@ -3,6 +3,27 @@
 // /changelog page and any future quick-view UI read from here.
 export const CHANGELOG = [
   {
+    version: "v3.0.0",
+    date: "2026-11-17",
+    title: "Maintenance Round",
+    items: [
+      "Nine review fixes: hashlist worker counts, batch-inclusive exports, restart-safe paused jobs, a single format registry, full CI coverage, wider pause/resume, full LM digests, adaptive engine backoff, and docs alignment",
+      "Paused jobs survive a server restart — state and uploads kept in paused_jobs/, then resumable or cancellable",
+      "Pause/resume now covers hashlist and rule-expanded runs, not just single-target runs",
+      "Pause/resume: rule-expansion budget honors the submitted max_candidates, matching the CLI",
+      "New GET /api/formats — the dashboard reads algorithm labels, salted formats, presets, and limits from Python instead of duplicating them",
+      "CSV export includes hashlist batch summaries (target_count); JSON export gains a batches array",
+      "LM accepts the full 32-hex digest as well as the 16-hex first block; 32-hex is a four-way ambiguity (MD5/NTLM/MD4/LM)",
+      "Engine batch waits use adaptive backoff (10 ms → 250 ms) instead of a fixed 0.1 s poll",
+      "CI runs pytest on Python 3.11–3.13 (Ubuntu + Windows), ruff, and a frontend build",
+      "Plaintext withholding is the default; opt in per run to store the recovered pair",
+      "Paused-job artifacts are owner-only, and stale paused records are cleaned after 7 days",
+      "Frontend quality: ESLint + Vitest tests, and a 75% pytest-cov gate in CI",
+      "Engine workers recycle after 1,000 batches to bound long-audit memory",
+      "167 automated tests",
+    ],
+  },
+  {
     version: "v2.0.0",
     date: "2026-11-06",
     title: "Feature Expansion",

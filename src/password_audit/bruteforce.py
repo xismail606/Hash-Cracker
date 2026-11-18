@@ -9,8 +9,8 @@ run unbounded.
 from __future__ import annotations
 
 import string
+from collections.abc import Iterator
 from itertools import product
-from typing import Iterator
 
 from .algorithms import HashInputError
 
@@ -23,6 +23,22 @@ CHARSET_PRESETS: dict[str, str] = {
     "digits": string.digits,
     "symbols": string.punctuation,
 }
+
+# Display labels for interface selects (dashboard, docs).
+CHARSET_PRESET_LABELS: dict[str, str] = {
+    "lower": "lowercase a-z",
+    "upper": "uppercase A-Z",
+    "digits": "digits 0-9",
+    "symbols": "symbols",
+}
+
+
+def list_charset_presets() -> list[dict]:
+    """Return charset preset names with display labels for interface selects."""
+    return [
+        {"name": name, "label": CHARSET_PRESET_LABELS.get(name, name)}
+        for name in CHARSET_PRESETS
+    ]
 
 
 def resolve_charset(spec: str) -> str:

@@ -56,3 +56,82 @@ def test_hashlist_no_store_option_omits_match_plaintext_from_history(tmp_path, c
     assert record.status == "match"
     assert record.matched_plaintext is None
     assert record.as_dict()["plaintext_withheld"] is True
+
+
+def test_version_flag_prints_package_version(capsys):
+    from password_audit import __version__
+    from password_audit.cli import main
+
+    with pytest.raises(SystemExit) as excinfo:
+        main(["--version"])
+    assert excinfo.value.code == 0
+    assert __version__ in capsys.readouterr().out
+
+
+def test_declared_versions_agree():
+    """pyproject, the package, and the dashboard must advertise one version."""
+    import json
+    import tomllib
+    from pathlib import Path
+
+    from password_audit import __version__
+
+    root = Path(__file__).resolve().parents[1]
+    pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    package_json = json.loads(
+        (root / "frontend" / "package.json").read_text(encoding="utf-8")
+    )
+    assert pyproject["project"]["version"] == __version__
+    assert package_json["version"] == __version__
+
+
+def test_export_includes_hashlist_batches_in_csv_and_json(tmp_path, capsys):
+    import csv
+    import json
+    from hashlib import md5
+
+    from password_audit.cli import main
+
+    wordlist = tmp_path / "words.txt"
+    hashlist = tmp_path / "hashes.txt"
+    database = tmp_path / "history.db"
+    wordlist.write_text("hashcat\n", encoding="utf-8")
+    hashlist.write_text(
+        f"md5:{md5(b'hashcat').hexdigest()}\n", encoding="utf-8"
+    )
+
+    exit_code = main(
+        [
+            "audit",
+            "--hashlist",
+            str(hashlist),
+            "--mode",
+            "dictionary",
+            "--wordlist",
+            str(wordlist),
+            "--database",
+            str(database),
+            "--yes",
+        ]
+    )
+    assert exit_code == 0
+    capsys.readouterr()
+
+    csv_path = tmp_path / "report.csv"
+    json_path = tmp_path / "report.json"
+    assert main(["export", str(csv_path), "--format", "csv",
+                 "--database", str(database)]) == 0
+    assert main(["export", str(json_path), "--format", "json",
+                 "--database", str(database)]) == 0
+
+    with open(csv_path, encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    batch_rows = [row for row in rows if row["target_count"]]
+    assert len(batch_rows) == 1
+    assert batch_rows[0]["target_count"] == "1"
+
+    with open(json_path, encoding="utf-8") as handle:
+        payload = json.load(handle)
+    assert len(payload["runs"]) == 1
+    assert len(payload["batches"]) == 1
+    assert payload["batches"][0]["target_count"] == 1

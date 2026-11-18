@@ -13,7 +13,7 @@
 
 A Python-based offline hash-cracking and password-auditing project. It identifies supported hash formats, compares a target against either a supplied dictionary or a bounded brute-force search, provides both a CLI and local web dashboard, and stores audit results in SQLite.
 
-> **Project status: Implemented.** All 33 v1 tasks and the v2 feature expansion (salted formats, hashlists, mutation rules, benchmark, pause/resume, dashboard export/ETA, plaintext withholding/encryption, RIPEMD-160 and adaptive formats) are complete, backed by a 145-test pytest suite and CI. See the [quickstart](specs/001-offline-password-audit/quickstart.md) for setup and validated scenarios.
+> **Project status: Implemented.** All 33 v1 tasks and the v2 feature expansion (salted formats, hashlists, mutation rules, benchmark, pause/resume, dashboard export/ETA, plaintext withholding/encryption, RIPEMD-160 and adaptive formats) are complete, backed by a 167-test pytest suite and CI. See the [quickstart](specs/001-offline-password-audit/quickstart.md) for setup and validated scenarios.
 
 ## Project Overview
 
@@ -32,7 +32,7 @@ Both interfaces call the same Python audit engine. The engine supports:
 
 | Algorithm   | Format                     | Support                        |
 | ----------- | -------------------------- | ------------------------------ |
-| LM          | 16 hexadecimal characters  | Yes                            |
+| LM          | 16 or 32 hexadecimal characters | Yes                            |
 | MD5         | 32 hexadecimal characters  | Yes                            |
 | NTLM        | 32 hexadecimal characters  | Yes                            |
 | MD4         | 32 hexadecimal characters  | Yes                            |
@@ -48,7 +48,7 @@ Both interfaces call the same Python audit engine. The engine supports:
 | sha512crypt | full hash string ($6$…)    | Yes (slow — see note)          |
 | phpass      | full hash string ($P$…)    | Yes (slow — see note)          |
 
-Hash length and character structure help identify a format, but do not always prove the algorithm. MD5, NTLM, and MD4 share the same 32-character hexadecimal shape. The tool reports all three and requires an explicit selection. NTLM uses Passlib's `nthash`; LM uses Passlib's `lmhash` and compares only the first 8-byte DES block (16 hex), matching the format hashcat uses — a 16-hex LM target identifies passwords by their first seven characters. MD5, SHA-1, SHA-224, SHA-256, SHA-384, and SHA-512 use Python's `hashlib`; MD4 reuses the pure-Python MD4 implementation from the NTLM fallback (validated against RFC 1320 test vectors). RIPEMD-160 is a dependency-free pure-Python implementation validated against the official test vectors. Adaptive formats (bcrypt, sha512crypt, phpass) verify against the full stored hash string via Passlib and are extremely slow — keep their brute-force budgets small (the `benchmark` command reports real per-algorithm throughput). Eight salted fast-hash formats are also supported (`md5($pass.$salt)`, `md5($salt.$pass)`, `sha1($pass.$salt)`, `sha1($salt.$pass)`, `sha256($pass.$salt)`, `sha256($salt.$pass)`, `sha512($pass.$salt)`, `sha512($salt.$pass)`) — pass the known salt with `--salt` (CLI) or the dashboard salt field.
+Hash length and character structure help identify a format, but do not always prove the algorithm. MD5, NTLM, MD4, and the full 32-hex LM digest share the same 32-character hexadecimal shape. The tool reports all four and requires an explicit selection. NTLM uses Passlib's `nthash`; LM uses Passlib's `lmhash` — a 16-hex LM target compares only the first 8-byte DES block (matching hashcat mode 3000, identifying passwords by their first seven characters) while a 32-hex LM target compares both blocks (first fourteen characters). MD5, SHA-1, SHA-224, SHA-256, SHA-384, and SHA-512 use Python's `hashlib`; MD4 reuses the pure-Python MD4 implementation from the NTLM fallback (validated against RFC 1320 test vectors). RIPEMD-160 is a dependency-free pure-Python implementation validated against the official test vectors. Adaptive formats (bcrypt, sha512crypt, phpass) verify against the full stored hash string via Passlib and are extremely slow — keep their brute-force budgets small (the `benchmark` command reports real per-algorithm throughput). Eight salted fast-hash formats are also supported (`md5($pass.$salt)`, `md5($salt.$pass)`, `sha1($pass.$salt)`, `sha1($salt.$pass)`, `sha256($pass.$salt)`, `sha256($salt.$pass)`, `sha512($pass.$salt)`, `sha512($salt.$pass)`) — pass the known salt with `--salt` (CLI) or the dashboard salt field.
 
 ## Features in Scope
 
@@ -140,9 +140,10 @@ hashcrack identify 299bd128c1101fd6  # 16-hex: LM
 hashcrack identify '$2a$05$...'  # prefix-recognized: bcrypt
 ```
 
-Supported shapes: LM (16), MD5/NTLM/MD4 (32, ambiguous), SHA-1/RIPEMD-160 (40,
+Supported shapes: LM (16 or 32), MD5/NTLM/MD4 (32, ambiguous), SHA-1/RIPEMD-160 (40,
 ambiguous), SHA-224/SHA-512-224 (56, ambiguous), SHA-256/SHA-512-256 (64,
-ambiguous), SHA-384 (96), SHA-512 (128). Adaptive formats (bcrypt `$2…`,
+ambiguous), SHA-384 (96), SHA-512 (128). A 32-hex value is ambiguous between
+MD5, NTLM, MD4, and the full 32-hex LM digest. Adaptive formats (bcrypt `$2…`,
 sha512crypt `$6$…`, phpass `$P$…`) are recognized by prefix — the full stored
 hash string is the target.
 
@@ -266,19 +267,28 @@ choices (informational; never stored).
 Open `http://127.0.0.1:8765`. The dashboard offers hash identification with
 algorithm chips, salted-format selection with a salt field, hashlist upload,
 both audit modes with mutation rules, workers 1–8, live progress with ETA,
-pause/resume, cancellation, per-target result tables, audit history with
-CSV/JSON export and clear-all, and a /changelog release-history page linked
-in the navbar.
+pause/resume (single-target, hashlist, and rule-expanded runs), cancellation,
+per-target result tables, audit history with CSV/JSON export and clear-all,
+and a /changelog release-history page linked in the navbar.
+
+A paused job is written next to the history database
+(`<database dir>/paused_jobs/`) together with its uploaded wordlist, so it
+survives a server restart and can still be resumed or cancelled afterwards.
+Starting a new audit discards such a restored paused job. A run that is
+executing at shutdown is not resumable — only jobs that reached `paused`
+are. The encryption passphrase is never persisted; re-enter it after a
+restart to read encrypted history rows.
 
 > **Always open the dashboard through the Flask server** — the JSON API exists only there. The built page opened through any other server shows a "Flask backend not detected" banner instead of failing silently. For frontend development, start the Flask server first so `npm run dev`/`npm run preview` can proxy `/api` to port 8765.
 
 JSON routes:
 
 - `POST /api/identify` — assess a hash and return compatible algorithms.
+- `GET /api/formats` — supported algorithms, labels, salted-format table, charset/rule presets, and worker/budget limits (the dashboard renders from this instead of its own copies).
 - `POST /api/audits` — start a dictionary, brute-force, salted, or hashlist audit.
 - `GET /api/audits/{job_id}` — retrieve progress, per-target results, and outcome.
 - `POST /api/audits/{job_id}/pause` / `resume` — checkpoint and continue a job.
-- `POST /api/audits/{job_id}/cancel` — cancel the active job.
+- `POST /api/audits/{job_id}/cancel` — cancel the active job (a paused job is finalized as cancelled and its persisted state is discarded).
 - `GET /api/history` — list local audit records.
 - `POST /api/history/clear` — permanently delete all local audit records.
 - `POST /api/history/unlock` — provide the encryption passphrase.
@@ -436,7 +446,7 @@ LICENSE.md
 pyproject.toml
 setup.ps1 / setup.sh          # one-command setup (Windows / Linux-macOS)
 serve.ps1 / serve.sh          # dashboard launch shortcuts
-.github/workflows/ci.yml      # pytest on Windows + Ubuntu
+.github/workflows/ci.yml      # pytest (3 OS/Python legs), ruff lint, frontend build
 src/password_audit/
 ├── __init__.py
 ├── __main__.py
@@ -456,13 +466,16 @@ frontend/
 ├── package.json
 ├── astro.config.mjs
 └── src/
-    ├── pages/index.astro
+    ├── layouts/Layout.astro
+    ├── pages/
+    │   ├── index.astro
+    │   └── changelog.astro
+    ├── data/changelog.js
     ├── components/
     │   ├── AuditDashboard.jsx
     │   ├── Navbar.jsx
     │   ├── Footer.jsx
-    │   ├── ParticleBackground.jsx
-    │   └── ChangelogModal.jsx
+    │   └── ParticleBackground.jsx
     └── styles/global.css
 tests/                        # pytest suite
 specs/
@@ -473,6 +486,7 @@ specs/
 │   ├── data-model.md
 │   ├── quickstart.md
 │   ├── tasks.md
+│   ├── checklists/
 │   └── contracts/
 │       ├── cli.md
 │       └── web.md
@@ -534,14 +548,14 @@ The canonical CLI command is `hashcrack` on all platforms. On Linux and Windows,
 
 ## Performance and Validation
 
-The `benchmark` command measures per-algorithm candidates per second on the current machine so budgets can be sized accordingly. Brute-force search is bounded by its configured candidate budget. The pytest suite (`tests/`, 145 tests) checks identification, dictionary and brute-force matching, hashlists, rules, progress accounting, pause/resume, export, plaintext withholding, encryption, and history behavior with synthetic hashes and candidate data.
+The `benchmark` command measures per-algorithm candidates per second on the current machine so budgets can be sized accordingly. Brute-force search is bounded by its configured candidate budget. The pytest suite (`tests/`, 167 tests plus a POSIX-only artifact-permissions test) checks identification, dictionary and brute-force matching, hashlists, rules, progress accounting, pause/resume (including restart recovery), export, plaintext withholding, encryption, and history behavior with synthetic hashes and candidate data.
 
 ## Current Status
 
 - The specification, design documents, contracts, and both task plans are complete; all 33 v1 tasks and the v2 expansion tasks (T034–T076) are implemented and marked done in their `tasks.md` files.
 - The Python package (`src/password_audit/`) provides hash identification (including salted, adaptive, RIPEMD-160, and SHA-512/224+/256 formats), dictionary/brute-force/hashlist auditing, mutation rules, multiprocessing, the benchmark command, pause/resume, the CLI, the Flask API, and SQLite history with optional at-rest encryption.
 - The Astro/React/Tailwind dashboard builds into `src/password_audit/static/` and is served by the loopback Flask server; it adds pause/resume, ETA, CSV/JSON export, plaintext-withholding and encryption controls, and history unlock.
-- Behavior is checked by the 145-test pytest suite running on Windows and Ubuntu via GitHub Actions CI.
+- Behavior is checked by the 167-test pytest suite (with a pytest-cov gate at 75%) running on Windows and Ubuntu via GitHub Actions CI, plus ruff, frontend ESLint/Vitest, and a frontend build job.
 
 ## License
 
@@ -563,6 +577,7 @@ v2.0.0 feature expansion).
 - [Quickstart and validation scenarios](specs/001-offline-password-audit/quickstart.md)
 - [CLI contract](specs/001-offline-password-audit/contracts/cli.md)
 - [Web contract](specs/001-offline-password-audit/contracts/web.md)
+- [DEPI deliverable pack](docs/README.md) — document index and pre-submission checklist
 
 v2 expansion documents:
 
@@ -573,6 +588,10 @@ v2 expansion documents:
 ## Feature Expansion (v2) — Phases 5–10, Implemented
 
 The v2 round planned in [specs/002-feature-expansion/](specs/002-feature-expansion/) is complete: salted fast-hash formats, hashlist multi-target audits, rule-based mutations, tooling/UX upgrades (benchmark, pause/resume, dashboard export, ETA, plaintext withholding), a pytest suite with CI, optional plaintext encryption at rest, and the researched formats (RIPEMD-160, adaptive bcrypt/sha512crypt/phpass, SHA-512/224 and SHA-512/256). See its [spec](specs/002-feature-expansion/spec.md), [plan](specs/002-feature-expansion/plan.md), and [task breakdown](specs/002-feature-expansion/tasks.md) (T034–T076).
+
+## Maintenance Round (v3) — Implemented
+
+The v3 round fixed nine defects found during a full review: hashlist audits honor the requested worker count; CSV/JSON exports include hashlist batch rows; paused jobs survive a server restart; the dashboard reads the format registries from `GET /api/formats` instead of duplicating them; CI covers Python 3.11–3.13, ruff, and the frontend build; pause/resume works for hashlist and rule-expanded runs; LM accepts the full 32-hex digest as well as the 16-hex first block; the engine's batch wait uses adaptive backoff instead of a fixed 0.1 s poll; and the documentation matches the implementation. See [CHANGELOG.md](CHANGELOG.md) for the itemized list.
 
   <!-- ===================== FOOTER ===================== -->
   <div align="center">

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "password-audit"
-version = "0.1.0"
+version = "3.0.0"
 description = "Offline hash identification and password auditing tool with a CLI and local web dashboard"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,6 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "pytest-cov>=5.0",
 ]
 encrypt = [
     "cryptography>=42",
@@ -35,3 +36,28 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 password_audit = ["static/**/*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = [
+    # Deliberate: Passlib import chains and the CLI serve loop can raise
+    # anything; the code intentionally converts every failure to a clean
+    # error/fallback, so a broad except is the designed behavior.
+    "BLE001",
+    # Deliberate: dictionary streaming keeps one file handle open across
+    # yielded batches; a context manager would close it mid-stream.
+    "SIM115",
+]
+
+[tool.coverage.run]
+source = ["src/password_audit"]
+omit = ["src/password_audit/__main__.py"]
+
+[tool.coverage.report]
+# Guards against coverage regressions; raise as the suite grows.
+fail_under = 75
+skip_covered = true

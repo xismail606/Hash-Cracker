@@ -44,7 +44,7 @@ hashcrack identify HASH
 
 Verified behavior:
 
-- Supported shapes: 16 hex → LM, 32 hex → MD5/NTLM/MD4 (ambiguous), 40 hex → SHA-1, 56 hex → SHA-224, 64 hex → SHA-256, 96 hex → SHA-384, 128 hex → SHA-512.
+- Supported shapes: 16 hex → LM, 32 hex → MD5/NTLM/MD4/LM-full (ambiguous), 40 hex → SHA-1/RIPEMD-160, 56 hex → SHA-224/SHA-512-224, 64 hex → SHA-256/SHA-512-256, 96 hex → SHA-384, 128 hex → SHA-512.
 - 32 hexadecimal characters are reported as ambiguous between MD5, NTLM, and MD4; the audit refuses to start until one of them is selected with `--algorithm`.
 - Malformed values (non-hex characters, wrong lengths) are rejected with an actionable message and no candidate processing starts.
 
@@ -85,7 +85,7 @@ Verified behavior: prints per-algorithm candidates/second (e.g. SHA-256 near 800
 
 ## Pause / Resume (dashboard)
 
-Start a long brute-force job, click Pause, then Resume. Verified behavior: the job checkpoints its attempt count, refuses resume if the wordlist changed, and continues with contiguous attempt accounting.
+Start a long brute-force job, click Pause, then Resume. Verified behavior: the job checkpoints its attempt count, refuses resume if the wordlist changed, and continues with contiguous attempt accounting. Hashlist and rule-expanded runs pause and resume the same way, and a paused job is restored after a server restart (its record and uploads are kept in `<database dir>/paused_jobs/`).
 
 ## Plaintext Withholding and Encryption
 

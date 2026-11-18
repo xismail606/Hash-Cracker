@@ -32,7 +32,7 @@ class TestResolveCharset:
 
 class TestValidateBruteforceOptions:
     def test_valid_options_return_space(self):
-        alphabet, total = validate_bruteforce_options(1, 2, 1000, "abc")
+        _, total = validate_bruteforce_options(1, 2, 1000, "abc")
         assert total == 3 + 9  # 3^1 + 3^2
 
     def test_max_below_min_raises(self):

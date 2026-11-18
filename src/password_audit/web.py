@@ -14,22 +14,28 @@ exception traces.
 from __future__ import annotations
 
 import atexit
+import contextlib
 import csv as _csv
 import io as _io
 import json
+import logging
 import os
 import secrets
 import shutil
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 
 from .algorithms import (
+    ALGORITHM_LABELS,
+    ALGORITHM_LENGTHS,
     ALGORITHM_NAMES,
     HashInputError,
     assess_hash,
+    is_adaptive,
     is_salted,
     select_algorithm,
 )
@@ -37,46 +43,53 @@ from .bruteforce import (
     DEFAULT_BUDGET,
     HARD_MAX_BUDGET,
     iter_bruteforce_batches,
+    list_charset_presets,
     resolve_charset,
     validate_bruteforce_options,
 )
 from .candidates import iter_wordlist_batches, parse_hashlist
 from .engine import (
+    DEFAULT_WORKERS,
     MAX_WORKERS,
     STATUS_PAUSED,
 )
-from .rules import iter_rule_expanded, resolve_rules_preset
+from .history import (
+    DEFAULT_DB_PATH,
+    EXPORT_COLUMNS,
+    HistoryError,
+    clear_runs,
+    combine_report_rows,
+    connect,
+    decrypt_stored,
+    export_batches,
+    export_rows,
+    init_encryption,
+    is_encrypted_value,
+    list_runs,
+    utc_now,
+)
 from .job_execution import (
+    STATE_RUNNING,
+    STATE_VALIDATING,
     AuditJobRequest,
     AuditJobRunner,
     CandidateSource,
     DashboardJob,
     new_job_id,
 )
-
-from .history import (
-    DEFAULT_DB_PATH,
-    EXPORT_COLUMNS,
-    decrypt_stored,
-    export_batches,
-    export_rows,
-    init_encryption,
-    is_encrypted_value,
-    HistoryError,
-    clear_runs,
-    connect,
-    list_runs,
-    utc_now,
-)
+from .rules import iter_rule_expanded, list_rules_presets, resolve_rules_preset
 
 MAX_UPLOAD_BYTES = 256 * 1024 * 1024  # 256 MiB
 UPLOAD_CHUNK = 1024 * 1024
 DEFAULT_PORT = 8765
 
+# Abandoned paused-job records older than this are removed at startup.
+PAUSED_JOB_RETENTION_DAYS = 7
+
+_LOGGER = logging.getLogger(__name__)
+
 # Terminal job states used by the API.
 _STATE_QUEUED = "queued"
-_STATE_RUNNING = "running"
-_STATE_VALIDATING = "validating"
 
 
 class AuditPreparationError(ValueError):
@@ -123,6 +136,148 @@ def create_app(
 
     atexit.register(_cleanup_uploads)
     app.config["_cleanup_uploads"] = _cleanup_uploads
+
+    # Paused jobs survive server restarts: their state (and any uploaded
+    # wordlist/hashlist) is kept next to the history database.
+    paused_dir = Path(db_path).expanduser().parent / "paused_jobs"
+
+    def _secure_paused_path(path: Path, *, directory: bool = False) -> None:
+        """Restrict paused-job artifacts to the current user (POSIX modes).
+
+        The kept uploads can contain a real wordlist, so other local accounts
+        must not be able to read them.
+        """
+        if os.name != "posix":
+            return
+        with contextlib.suppress(OSError):
+            path.chmod(0o700 if directory else 0o600)
+
+    def _persist_paused_job(job: DashboardJob) -> None:
+        """Move a paused job's uploads out of the temp dir and record its
+        state so the job can be resumed after a server restart."""
+        paused_dir.mkdir(parents=True, exist_ok=True)
+        _secure_paused_path(paused_dir, directory=True)
+        record = {
+            "job_id": job.job_id,
+            "target_hash": job.target_hash,
+            "algorithm": job.algorithm,
+            "mode": job.mode,
+            "workers": job.workers,
+            "budget": job.budget,
+            "salt": job.salt,
+            "run_params": job.run_params,
+            "resume_state": job.resume_state,
+            "targets": job.targets,
+            "plaintext_withheld": job.plaintext_withheld,
+            "started_at": job.started_at,
+            "attempts": job.attempts,
+            "elapsed_ms": job.elapsed_ms,
+        }
+        for attr in ("temp_path", "temp_hashlist"):
+            path = getattr(job, attr)
+            if path is not None and path.is_file():
+                if path.parent != paused_dir:
+                    moved = paused_dir / path.name
+                    shutil.move(str(path), moved)
+                    setattr(job, attr, moved)
+                    path = moved
+                _secure_paused_path(path)
+                record[attr] = path.name
+        record_path = paused_dir / f"{job.job_id}.json"
+        record_path.write_text(json.dumps(record), encoding="utf-8")
+        _secure_paused_path(record_path)
+
+    def _clear_persisted_job(job_id: str) -> None:
+        with contextlib.suppress(OSError):
+            (paused_dir / f"{job_id}.json").unlink(missing_ok=True)
+
+    def _discard_paused_job(job: DashboardJob) -> None:
+        """Delete a paused job's persisted state and its kept uploads."""
+        _clear_persisted_job(job.job_id)
+        for attr in ("temp_path", "temp_hashlist"):
+            path = getattr(job, attr, None)
+            if path is not None:
+                with contextlib.suppress(OSError):
+                    Path(path).unlink(missing_ok=True)
+
+    def _cleanup_stale_paused_jobs() -> None:
+        """Remove abandoned paused-job records past the retention window.
+
+        The newest record is always kept because it is the one the dashboard
+        restores; older leftovers (crashes, repeated pauses) are deleted
+        together with their kept uploads so sensitive wordlists do not
+        accumulate on disk.
+        """
+        if not paused_dir.is_dir():
+            return
+        try:
+            records = sorted(
+                paused_dir.glob("*.json"), key=lambda path: path.stat().st_mtime
+            )
+        except OSError:
+            return
+        cutoff = time.time() - PAUSED_JOB_RETENTION_DAYS * 86400
+        for record_file in records[:-1]:
+            try:
+                if record_file.stat().st_mtime >= cutoff:
+                    continue
+                record = json.loads(record_file.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                record = {}
+            for attr in ("temp_path", "temp_hashlist"):
+                name = record.get(attr) if isinstance(record, dict) else None
+                if name:
+                    with contextlib.suppress(OSError):
+                        (paused_dir / name).unlink(missing_ok=True)
+            with contextlib.suppress(OSError):
+                record_file.unlink(missing_ok=True)
+
+    def _load_paused_jobs() -> None:
+        """Restore the newest persisted paused job, dropping stale leftovers."""
+        if not paused_dir.is_dir():
+            return
+        _cleanup_stale_paused_jobs()
+        try:
+            record_files = sorted(
+                paused_dir.glob("*.json"), key=lambda path: path.stat().st_mtime
+            )
+        except OSError:
+            return
+        for record_file in record_files:
+            try:
+                record = json.loads(record_file.read_text(encoding="utf-8"))
+                job = DashboardJob(
+                    job_id=record["job_id"],
+                    state=STATUS_PAUSED,
+                    target_hash=record.get("target_hash", ""),
+                    algorithm=record.get("algorithm", ""),
+                    mode=record.get("mode", ""),
+                    workers=record.get("workers", DEFAULT_WORKERS),
+                    budget=record.get("budget"),
+                    salt=record.get("salt"),
+                    resume_state=record.get("resume_state"),
+                    run_params=record.get("run_params", {}),
+                    temp_path=(
+                        paused_dir / record["temp_path"]
+                        if record.get("temp_path")
+                        else None
+                    ),
+                    temp_hashlist=(
+                        paused_dir / record["temp_hashlist"]
+                        if record.get("temp_hashlist")
+                        else None
+                    ),
+                    started_at=record.get("started_at", ""),
+                    targets=record.get("targets"),
+                    attempts=record.get("attempts", 0),
+                    elapsed_ms=record.get("elapsed_ms", 0),
+                    plaintext_withheld=record.get("plaintext_withheld", False),
+                )
+            except (OSError, ValueError, KeyError, TypeError):
+                _LOGGER.warning("Skipping unreadable paused-job record %s", record_file)
+                continue
+            # Single-job dashboard: the newest persisted paused job wins.
+            app.config["_job"] = job
 
     # --- static frontend -------------------------------------------------
 
@@ -179,6 +334,47 @@ def create_app(
         )
         return response
 
+    # --- supported formats (single source of truth for the UI) -----------
+
+    @app.get("/api/formats")
+    def formats():
+        """Expose the supported-format registries for the dashboard.
+
+        The Python registries are authoritative; the frontend renders from
+        this response instead of duplicating the tables.
+        """
+        salted_by_length: dict[int, list[str]] = {}
+        for name in ALGORITHM_LENGTHS:
+            if is_salted(name):
+                salted_by_length.setdefault(ALGORITHM_LENGTHS[name], []).append(name)
+        algorithms = [
+            {
+                "name": name,
+                "label": ALGORITHM_LABELS[name],
+                "kind": (
+                    "adaptive"
+                    if is_adaptive(name)
+                    else "salted"
+                    if is_salted(name)
+                    else "fast"
+                ),
+            }
+            for name in ALGORITHM_NAMES
+        ]
+        return jsonify(
+            {
+                "algorithms": algorithms,
+                "labels": dict(ALGORITHM_LABELS),
+                "salted_by_length": salted_by_length,
+                "charset_presets": list_charset_presets(),
+                "rules_presets": list_rules_presets(),
+                "max_workers": MAX_WORKERS,
+                "default_workers": DEFAULT_WORKERS,
+                "hard_max_candidates": HARD_MAX_BUDGET,
+                "default_budget": DEFAULT_BUDGET,
+            }
+        )
+
     # --- identify --------------------------------------------------------
 
     @app.post("/api/identify")
@@ -224,10 +420,12 @@ def create_app(
         job_request: AuditJobRequest,
     ) -> tuple[DashboardJob | None, dict | None]:
         job = _create_dashboard_job(job_request)
-        error = _reserve_job(job)
+        error, discarded_paused = _reserve_job(job)
         if error is not None:
             return None, error
-        runner = AuditJobRunner(job, job_request, db_path)
+        if discarded_paused is not None:
+            _discard_paused_job(discarded_paused)
+        runner = AuditJobRunner(job, job_request, db_path, on_pause=_persist_paused_job)
         job.thread = threading.Thread(target=runner.run, daemon=True)
         job.thread.start()
         return job, None
@@ -269,27 +467,36 @@ def create_app(
             ),
         }
 
-    def _reserve_job(job: DashboardJob) -> dict | None:
+    def _reserve_job(job: DashboardJob) -> tuple[dict | None, DashboardJob | None]:
+        """Reserve the single job slot; return (error, discarded paused job)."""
         with app.config["_job_lock"]:
             active = app.config["_job"]
+            paused_job = None
+            if (
+                active is not None
+                and active.state == STATUS_PAUSED
+                and active.thread is None
+            ):
+                # A paused job restored after a restart; starting a new audit
+                # abandons it (its persisted state is removed).
+                paused_job = active
+                active = None
             if active is not None and active.state in (
-                _STATE_VALIDATING,
+                STATE_VALIDATING,
                 _STATE_QUEUED,
-                _STATE_RUNNING,
+                STATE_RUNNING,
             ):
                 return {
                     "error": "Another dashboard audit is already running. "
                     "Cancel it or wait for it to finish."
-                }
+                }, None
             app.config["_job"] = job
-        return None
+        return None, paused_job
 
     def _remove_temp_file(path: Path | None) -> None:
         if path is not None:
-            try:
+            with contextlib.suppress(OSError):
                 path.unlink(missing_ok=True)
-            except OSError:
-                pass
 
     def _save_upload(file_storage) -> tuple[Path | None, dict | None]:
         """Stream an upload to a temporary file; enforce the 256 MiB limit."""
@@ -337,7 +544,16 @@ def create_app(
         batch_source = iter_wordlist_batches(temp_path)
         budget = None
         if variants_for is not None:
-            budget = DEFAULT_BUDGET
+            # Rule-expanded streams are bounded like brute-force runs; the
+            # operator selects the budget (default 1,000,000).
+            try:
+                budget = int(
+                    request.form.get("max_candidates", str(DEFAULT_BUDGET))
+                )
+            except ValueError as exc:
+                raise AuditPreparationError(
+                    "The candidate budget must be an integer."
+                ) from exc
             batch_source = iter_rule_expanded(batch_source, variants_for, budget)
         return CandidateSource(batch_source, budget, None, temp_path)
 
@@ -384,7 +600,18 @@ def create_app(
             raise AuditPreparationError(
                 "The wordlist changed since the pause; resume is refused."
             )
-        return CandidateSource(iter_wordlist_batches(wordlist), None, None, wordlist)
+        batch_source = iter_wordlist_batches(wordlist)
+        budget = None
+        variants_for = resolve_rules_preset(params.get("rules_name", "none"))
+        if variants_for is not None:
+            try:
+                budget = int(params["max_candidates"])
+            except (KeyError, ValueError) as exc:
+                raise AuditPreparationError(
+                    "Stored rule-expansion budget is invalid."
+                ) from exc
+            batch_source = iter_rule_expanded(batch_source, variants_for, budget)
+        return CandidateSource(batch_source, budget, None, wordlist)
 
     def _prepare_bruteforce_resume(params: dict) -> CandidateSource:
         try:
@@ -410,14 +637,18 @@ def create_app(
             source=source,
             temp_hashlist=job.temp_hashlist,
             salt=job.salt,
-            targets=None,
+            targets=job.targets,
             plaintext_withheld=job.plaintext_withheld,
         )
         job.pause_event.clear()
         job.resume_state = job.resume_state or {}
-        runner = AuditJobRunner(job, request_data, db_path)
+        runner = AuditJobRunner(
+            job, request_data, db_path, on_pause=_persist_paused_job
+        )
         job.thread = threading.Thread(target=runner.run, daemon=True)
         job.thread.start()
+        # The job is running again; its restart-recovery record is obsolete.
+        _clear_persisted_job(job.job_id)
 
     def _read_hashlist_upload() -> tuple[list[dict] | None, Path | None]:
         hashlist_file = request.files.get("hashlist")
@@ -445,7 +676,15 @@ def create_app(
             raise AuditPreparationError(
                 "--salt is not supported with hashlists (no per-target salt)."
             )
-        return {"target": "", "algorithm": "hashlist", "workers": 4}, None
+        try:
+            workers = int(request.form.get("workers") or DEFAULT_WORKERS)
+        except (TypeError, ValueError) as exc:
+            raise AuditPreparationError("Worker count must be an integer.") from exc
+        if workers < 1 or workers > MAX_WORKERS:
+            raise AuditPreparationError(
+                f"Worker count must be between 1 and {MAX_WORKERS}."
+            )
+        return {"target": "", "algorithm": "hashlist", "workers": workers}, None
 
     def _prepare_single_target_params() -> tuple[dict, str | None]:
         algorithm = request.form.get("algorithm", "")
@@ -562,6 +801,17 @@ def create_app(
         job = app.config["_job"]
         if job is None or job.job_id != job_id:
             return jsonify({"error": "Unknown job ID."}), 404
+        if job.state == STATUS_PAUSED and job.thread is None:
+            # A paused (possibly restart-restored) job: finalize as cancelled
+            # and discard its persisted recovery state and kept uploads.
+            job.state = "cancelled"
+            job.result = {
+                "status": "cancelled",
+                "attempts": job.attempts,
+                "elapsed_ms": job.elapsed_ms,
+            }
+            _discard_paused_job(job)
+            return jsonify({"job_id": job.job_id, "state": job.state})
         job.cancel_event.set()
         return jsonify({"job_id": job.job_id, "state": job.state, "cancelling": True})
 
@@ -573,14 +823,8 @@ def create_app(
         job = app.config["_job"]
         if job is None or job.job_id != job_id:
             return jsonify({"error": "Unknown job ID."}), 404
-        if job.state != _STATE_RUNNING:
+        if job.state != STATE_RUNNING:
             return jsonify({"error": "Only a running job can be paused."}), 400
-        if job.targets is not None:
-            return jsonify({"error": "Pause is not supported for hashlist jobs."}), 400
-        if job.run_params.get("rules_name", "none") != "none":
-            return jsonify(
-                {"error": "Pause is not supported for rule-expanded runs."}
-            ), 400
         job.pause_event.set()
         return jsonify({"job_id": job.job_id, "state": job.state, "pausing": True}), 202
 
@@ -598,7 +842,7 @@ def create_app(
             _start_resumed_job(job)
         except AuditPreparationError as exc:
             return jsonify({"error": str(exc)}), exc.status_code
-        return jsonify({"job_id": job.job_id, "state": _STATE_RUNNING, "resumed": True})
+        return jsonify({"job_id": job.job_id, "state": STATE_RUNNING, "resumed": True})
 
     # --- history ---------------------------------------------------------
 
@@ -677,7 +921,7 @@ def create_app(
         buf = _io.StringIO()
         writer = _csv.DictWriter(buf, fieldnames=EXPORT_COLUMNS)
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(combine_report_rows(rows, batches))
         return Response(
             buf.getvalue(),
             mimetype="text/csv",
@@ -697,6 +941,9 @@ def create_app(
         except HistoryError as exc:
             return jsonify({"error": str(exc)}), 500
         return jsonify({"deleted": deleted})
+
+    # Restart recovery: restore any paused job persisted before a shutdown.
+    _load_paused_jobs()
 
     return app
 

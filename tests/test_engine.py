@@ -13,12 +13,12 @@ import pytest
 from password_audit.bruteforce import iter_bruteforce_batches, resolve_charset
 from password_audit.candidates import iter_wordlist_batches
 from password_audit.engine import (
-    EngineInputError,
     STATUS_BUDGET_EXHAUSTED,
     STATUS_CANCELLED,
     STATUS_MATCH,
     STATUS_NO_MATCH,
     STATUS_PAUSED,
+    EngineInputError,
     clamp_workers,
     run_audit,
 )
@@ -172,7 +172,7 @@ class TestCancellation:
             iter_bruteforce_batches(alphabet, 1, 8, 10_000_000),
             workers=2,
             budget=10_000_000,
-            total_space=36 + sum(36**l for l in range(2, 9)),
+            total_space=36 + sum(36**length for length in range(2, 9)),
             cancel_event=cancel,
             progress_callback=progress,
         )
@@ -242,6 +242,27 @@ class TestHashlistAudit:
         assert statuses[0]["matched_plaintext"] == "hashcat"
         assert statuses[0]["match_at_attempt"] == 1
 
+    def test_16hex_lm_target_matches_first_des_block(self):
+        from password_audit.engine import run_hashlist_audit
+
+        targets = [
+            {"id": 0, "algorithm": "lm", "hash": "299bd128c1101fd6"},
+            {"id": 1, "algorithm": "lm", "hash": "299bd128c1101fd6aad3b435b51404ee"},
+        ]
+        result = run_hashlist_audit(targets, iter([["hashcat123", "hashcat"]]), workers=1)
+
+        assert result.status == STATUS_MATCH
+        by_id = {target["id"]: target for target in result.targets}
+        # "hashcat123" shares the first seven characters, so it matches the
+        # 16-hex (first-block) target at attempt 1.
+        assert by_id[0]["status"] == STATUS_MATCH
+        assert by_id[0]["matched_plaintext"] == "hashcat123"
+        assert by_id[0]["match_at_attempt"] == 1
+        # The full 32-hex target only matches the exact seven-character password.
+        assert by_id[1]["status"] == STATUS_MATCH
+        assert by_id[1]["matched_plaintext"] == "hashcat"
+        assert by_id[1]["match_at_attempt"] == 2
+
     def test_different_targets_match_later_in_the_same_batch(self):
         from password_audit.engine import run_hashlist_audit
 
@@ -288,6 +309,46 @@ class TestHashlistAudit:
 
         assert result.status == STATUS_NO_MATCH
         assert result.attempts == 2
+
+    def test_pause_then_resume_carries_matches_and_accounting(self):
+        from password_audit.engine import run_hashlist_audit
+
+        targets = [
+            {"id": 0, "algorithm": "md5", "hash": hashlib.md5(b"early").hexdigest()},
+            {"id": 1, "algorithm": "md5", "hash": hashlib.md5(b"later").hexdigest()},
+        ]
+        pause = threading.Event()
+
+        def request_pause(attempts, elapsed_ms, fraction):
+            pause.set()
+
+        batches = [["early", "mid"], ["later", "zz"]]
+        first = run_hashlist_audit(
+            targets,
+            iter(batches),
+            workers=1,
+            pause_event=pause,
+            progress_callback=request_pause,
+        )
+
+        assert first.status == STATUS_PAUSED
+        by_id = {target["id"]: target for target in first.targets}
+        assert by_id[0]["status"] == STATUS_MATCH
+        assert by_id[0]["matched_plaintext"] == "early"
+        # The second batch was already submitted and drains during the pause.
+        assert by_id[1]["matched_plaintext"] == "later"
+        assert first.resume["attempts_base"] == 3  # the attempt of the last match
+        assert first.resume["skip_source"] == 4  # all four submitted candidates
+        assert first.resume["matched_plaintext"] == {0: "early", 1: "later"}
+
+        second = run_hashlist_audit(
+            targets, iter(batches), workers=1, resume_state=first.resume
+        )
+        assert second.status == STATUS_MATCH
+        assert second.attempts == 3  # everything matched in the paused pass
+        assert {
+            target["id"]: target["matched_plaintext"] for target in second.targets
+        } == {0: "early", 1: "later"}
 
     def test_partial_match_exhaustion(self):
         from password_audit.engine import STATUS_NO_MATCH, run_hashlist_audit

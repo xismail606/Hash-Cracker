@@ -69,6 +69,27 @@ def _make_all_variants(word: str) -> list[str]:
 
 RULE_PRESETS["all"] = _make_all_variants
 
+# Display labels for interface selects (dashboard, docs).
+RULE_PRESET_LABELS: dict[str, str] = {
+    "none": "No rules (original words only)",
+    "capitalize": "Capitalize first letter",
+    "upper": "UPPERCASE",
+    "lower": "lowercase",
+    "leetspeak": "Leetspeak (a→4, e→3, i→1, o→0, s→5)",
+    "append_digits_0_99": "Append digits 0-99",
+    "append_years": "Append years 1990-2029",
+    "all": "All of the above combined",
+}
+
+
+def list_rules_presets() -> list[dict]:
+    """Return rule preset names with display labels for interface selects."""
+    names = ["none", *RULE_PRESETS]
+    return [
+        {"name": name, "label": RULE_PRESET_LABELS.get(name, name)}
+        for name in names
+    ]
+
 
 def resolve_rules_preset(name: str) -> callable:
     """Return the variant function for a preset name; raise ValueError if unknown."""

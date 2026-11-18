@@ -5,6 +5,7 @@ Every hashcat example used here is the digest of the plaintext ``hashcat``
 """
 
 import hashlib
+from typing import ClassVar
 
 import pytest
 
@@ -25,13 +26,17 @@ HASHCAT_EXAMPLES = [
     ("md5", 0, "8743b52063cd84097a65d1633f5c74f5"),
     ("ntlm", 1000, "b4b9b02e6f09a9bd760f388b67351e2b"),
     ("md4", 900, "afe04867ec7a3845145579a95f72eca7"),
-    ("lm", 3000, "299bd128c1101fd6"),
     ("sha1", 100, "b89eaac7e61417341b710b727768294d0e6a277b"),
     ("sha224", 1300, "e4fa1555ad877bf0ec455483371867200eee89550a93eff2f95a6198"),
     ("sha256", 1400, "127e6fbfe24a750e72930c220a8e138275656b8e5d8f48a98c3c92df2caba935"),
     ("sha384", None, hashlib.sha384(b"hashcat").hexdigest()),
     ("sha512", 1700, "82a9dda829eb7f8ffe9fbe49e45d47d2dad9664fbb7adf72492e3c81ebd3e29134d9bc12212bf83c6840f10e8246b9db54a4859b7ccd0123d86e5872c1e5082f"),
 ]
+
+# LM digests of "hashcat": hashcat mode 3000 publishes the first DES block
+# (16 hex); the full 32-hex digest appends the null-block second half
+# because "hashcat" is only seven characters long.
+LM_FULL_HASHCAT = "299bd128c1101fd6aad3b435b51404ee"
 
 
 class TestMD4Fallback:
@@ -53,6 +58,27 @@ class TestHashcatExamples:
         # MD4 hashes UTF-8 bytes; NTLM hashes UTF-16LE encoding.
         assert hash_candidate("hashcat", "md4") != hash_candidate("hashcat", "ntlm")
 
+    def test_lm_full_digest_is_two_des_blocks(self):
+        assert hash_candidate("hashcat", "lm") == LM_FULL_HASHCAT
+
+    def test_lm_empty_password_null_blocks(self):
+        # An empty password produces the known null-block constant twice.
+        assert hash_candidate("", "lm") == "aad3b435b51404ee" * 2
+
+    def test_verify_candidate_accepts_hashcat_style_16hex_lm_target(self):
+        assert verify_candidate("hashcat", "lm", "299bd128c1101fd6") is True
+
+    def test_verify_candidate_16hex_target_matches_first_seven_chars(self):
+        # A candidate sharing only the first seven characters matches the
+        # 16-hex (first-block) target but not the full 32-hex digest.
+        longer = "hashcat123"
+        assert verify_candidate(longer, "lm", "299bd128c1101fd6") is True
+        assert verify_candidate(longer, "lm", LM_FULL_HASHCAT) is False
+
+    def test_verify_candidate_32hex_lm_target_is_exact(self):
+        assert verify_candidate("hashcat", "lm", LM_FULL_HASHCAT) is True
+        assert verify_candidate("hashcat123", "lm", LM_FULL_HASHCAT) is False
+
     def test_unknown_algorithm_raises(self):
         with pytest.raises(ValueError, match="Unsupported algorithm"):
             hash_candidate("x", "rot13")
@@ -60,7 +86,7 @@ class TestHashcatExamples:
 
 class TestSaltedFormats:
     # hashcat salted example hashes for plaintext "hashcat".
-    HASHCAT_SALTED = [
+    HASHCAT_SALTED: ClassVar[list[tuple]] = [
         ("md5_pass_salt", 10, "343141", "3d83c8e717ff0e7ecfe187f088d69954"),
         ("md5_salt_pass", 20, "4247", "57ab8499d08c59a7211c77f557bf9425"),
         ("sha1_pass_salt", 110, "30007548152", "848952984db93bdd2d0151d4ecca6ea44fcf49e3"),
