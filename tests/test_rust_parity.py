@@ -7,9 +7,7 @@ skipped (with a clear message) when the Rust CLI has not been built.
 
 from __future__ import annotations
 
-import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
