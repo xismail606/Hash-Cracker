@@ -1,0 +1,67 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/hc-core",
+    "crates/hc-history",
+    "crates/hc-server",
+    "crates/hc-cli",
+]
+
+[workspace.package]
+edition = "2021"
+version = "3.1.0"
+license = "MIT"
+
+[workspace.dependencies]
+hc-core = { path = "crates/hc-core" }
+hc-history = { path = "crates/hc-history" }
+hc-server = { path = "crates/hc-server" }
+
+# HTTP stack
+axum = { version = "0.8", features = ["multipart"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "time"] }
+tower = { version = "0.5", features = ["util"] }
+
+# Serialization / CLI
+serde = { version = "1", features = ["derive"] }
+# preserve_order: JSON payloads must key-match the Python dict order.
+serde_json = { version = "1", features = ["preserve_order"] }
+clap = { version = "4", features = ["derive"] }
+
+# Storage
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Hashing (RustCrypto, digest 0.11 line)
+digest = "0.11"
+md-5 = "0.11"
+sha1 = "0.11"
+sha2 = "0.11"
+ripemd = "0.2"
+md4 = "0.11"
+des = "0.9"
+cipher = "0.5"
+
+# Adaptive password hashing
+bcrypt = "0.15"
+sha-crypt = "0.5"
+
+# Encryption at rest (must match the Python backend byte-for-byte).
+# Fernet tokens are implemented in hc-history with RustCrypto primitives
+# (the `fernet` crate pulls in openssl-sys, which cannot build on MSVC).
+aes = "0.9"
+cbc = { version = "0.2", features = ["alloc"] }
+hmac = "0.13"
+scrypt = { version = "0.12", default-features = false }
+
+# Misc
+crossbeam-channel = "0.5"
+time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
+uuid = { version = "1", features = ["v4"] }
+tempfile = "3"
+hex = "0.4"
+base64 = "0.22"
+rand = "0.8"
+
+[profile.release]
+opt-level = 3
+lto = "thin"

@@ -58,6 +58,8 @@ MIGRATION_COLUMNS = (
     ("salt", "TEXT"),
     ("batch_id", "TEXT"),
     ("plaintext_withheld", "INTEGER"),
+    # Phase 11 (Rust backend): which backend produced the run.
+    ("backend", "TEXT"),
 )
 
 EXPORT_COLUMNS = (
@@ -75,6 +77,7 @@ EXPORT_COLUMNS = (
     "salt",
     "batch_id",
     "plaintext_withheld",
+    "backend",
     "target_count",
 )
 
@@ -101,6 +104,8 @@ class AuditRecord:
     salt: str | None = None
     batch_id: str | None = None
     plaintext_withheld: bool = False
+    # Which backend produced the run; None = pre-Phase-11 row (Python).
+    backend: str | None = None
 
     def as_dict(self) -> dict:
         return {
@@ -119,6 +124,8 @@ class AuditRecord:
             "batch_id": self.batch_id,
             # SQLite stores 0/1; expose a real bool in JSON/CSV payloads.
             "plaintext_withheld": bool(self.plaintext_withheld),
+            # Pre-Phase-11 rows carry NULL; display them as the Python backend.
+            "backend": self.backend or "python",
         }
 
 
@@ -168,6 +175,7 @@ def record_run(
     batch_id: str | None = None,
     plaintext_withheld: bool = False,
     plaintext_key: bytes | None = None,
+    backend: str = "python",
 ) -> int:
     """Persist one audit run; return the new run ID.
 
@@ -185,8 +193,8 @@ def record_run(
             INSERT INTO audit_runs (
                 started_at, completed_at, target_hash, algorithm, mode,
                 status, attempts, elapsed_ms, worker_count, matched_plaintext,
-                salt, batch_id, plaintext_withheld
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                salt, batch_id, plaintext_withheld, backend
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 started_at,
@@ -202,6 +210,7 @@ def record_run(
                 salt,
                 batch_id,
                 1 if plaintext_withheld else 0,
+                backend,
             ),
         )
         conn.commit()
@@ -214,7 +223,7 @@ def list_runs(conn: sqlite3.Connection, limit: int | None = None) -> list[AuditR
     """Return local audit records, newest first."""
     query = (
         "SELECT run_id, started_at, completed_at, target_hash, algorithm, mode, "
-        "status, attempts, elapsed_ms, worker_count, matched_plaintext, salt, batch_id, plaintext_withheld "
+        "status, attempts, elapsed_ms, worker_count, matched_plaintext, salt, batch_id, plaintext_withheld, backend "
         "FROM audit_runs ORDER BY run_id DESC"
     )
     params: tuple = ()

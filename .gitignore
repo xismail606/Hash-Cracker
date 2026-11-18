@@ -130,3 +130,9 @@ skills-lock.json
 shots/
 .taste-skill/
 docs/
+# ========================================== 
+# Rust (Phase 11 backend)
+# ========================================== 
+rust/target/
+rust/**/target/
+**/*.rs.bk

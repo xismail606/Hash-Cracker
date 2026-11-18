@@ -1,0 +1,24 @@
+[package]
+name = "hc-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Hash Cracker engine: formats, hashing, candidates, rules, audits, benchmark"
+
+[dependencies]
+digest = { workspace = true }
+md-5 = { workspace = true }
+sha1 = { workspace = true }
+sha2 = { workspace = true }
+ripemd = { workspace = true }
+md4 = { workspace = true }
+des = { workspace = true }
+cipher = { workspace = true }
+bcrypt = { workspace = true }
+sha-crypt = { workspace = true }
+hex = { workspace = true }
+rand = { workspace = true }
+crossbeam-channel = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
