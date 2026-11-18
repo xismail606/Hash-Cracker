@@ -14,13 +14,13 @@ The dashboard uses Astro, React, JavaScript, and Tailwind CSS. Flask serves the 
 ## Dashboard Form
 
 - Accepts one target hash and displays supported algorithm candidates.
-- Requires an explicit MD5, NTLM, or MD4 choice for 32-character hexadecimal hashes.
+- Requires an explicit MD5, NTLM, MD4, or LM choice for 32-character hexadecimal hashes.
 - Offers dictionary and brute-force modes.
 - Offers the salted fast-hash formats (`md5($pass.$salt)` … `sha512($salt.$pass)`) in an advanced format select with a required salt field; the backend rejects salted starts without a salt and unsalted formats with one.
 - Dictionary mode accepts one UTF-8 wordlist upload up to 256 MiB.
 - An optional hashlist upload (same format as the CLI hashlist) audits many targets in one pass; it replaces the single hash field and its per-target results are shown in a results table with the batch ID.
 - Dictionary mode offers mutation-rule presets that expand candidates inside the candidate budget.
-- A run-level checkbox withholds the recovered plaintext from local history (the match is still recorded with a withheld marker).
+- A run-level checkbox withholds the recovered plaintext from local history (the match is still recorded with a withheld marker). Withholding is the default; ticking "store the recovered plaintext" opts in to keeping the plaintext/hash pair.
 - The Auto-fit button identifies the hash and applies brute-force settings to the form: `lower,digits` by default, `upper` for an identified LM target, minimum length 1, the largest fully covered maximum length under the 10,000,000-candidate hard limit, and a candidate budget equal to the full configured search space. It does not infer the plaintext length. For ambiguous shapes it leaves the algorithm unselected.
 - Brute-force mode requires a selected charset, minimum length, maximum length, and candidate budget; the budget defaults to 1,000,000 and cannot exceed 10,000,000.
 - Offers worker counts from 1 through 8, defaulting to 4.
@@ -30,23 +30,25 @@ The dashboard uses Astro, React, JavaScript, and Tailwind CSS. Flask serves the 
 ## JSON API
 
 - `POST /api/identify` accepts a JSON hash string and returns supported algorithm candidates and ambiguity state.
+- `GET /api/formats` returns the supported-format registries: algorithm names with labels and kinds, the salted-format table keyed by hex length, charset and rule presets with labels, and the worker and candidate-budget limits. The dashboard renders its selects and labels from this response so the Python registries stay the single source of truth.
 - `POST /api/audits` accepts a mode-specific request. Dictionary mode uses a multipart wordlist upload; brute-force mode accepts charset, length range, and candidate budget fields.
 - `GET /api/audits/{job_id}` returns state, attempts, budget, elapsed time, worker count, and terminal outcome. It returns plaintext and target hash on a successful match, consistent with the project requirements.
-- `POST /api/audits/{job_id}/cancel` requests cancellation.
+- `POST /api/audits/{job_id}/cancel` requests cancellation. When the job is paused, the request finalizes it as cancelled immediately and deletes its persisted restart-recovery state and kept uploads.
 - `GET /api/history` returns local audit records, including successful plaintext/hash pairs; encrypted rows show `<encrypted>` until `POST /api/history/unlock` succeeds with the passphrase.
 - `GET /api/export?format=csv|json` downloads the full history as an attachment.
-- `POST /api/audits/{id}/pause` and `POST /api/audits/{id}/resume` checkpoint and continue single-target jobs (refused for hashlist and rule-expanded runs).
+- `POST /api/audits/{id}/pause` and `POST /api/audits/{id}/resume` checkpoint and continue jobs — single-target and hashlist runs, including rule-expanded streams. A resumed hashlist keeps every target matched before the pause.
 - `POST /api/history/clear` permanently deletes every local audit record (including saved plaintext/hash pairs) and returns the number of removed rows. It is destructive, CSRF-protected, and intended for the dashboard's confirmation dialog; a job that is already running still records its own outcome afterwards.
 - State-changing requests require an anti-CSRF token and are available only from the loopback server.
 
 ## Progress, Results, and Storage
 
 - Displays current mode, algorithm, effective workers, attempts, progress, elapsed time, and terminal state. Bounded runs show an ETA (attempts/second × remaining) and budget-fraction progress bar while running.
-- Pause/resume buttons follow the job state machine (running → pausing → paused → resuming → running); pause requests for hashlist and rule-expanded runs are refused by the API with an explicit error, which the dashboard surfaces.
+- Pause/resume buttons follow the job state machine (running → pausing → paused → resuming → running) and are available for all run types; the API returns an explicit error only when the job is not in a pausable state, which the dashboard surfaces.
 - The history card offers CSV/JSON download buttons (`GET /api/export`) and shows encrypted rows as `<encrypted>` with a passphrase unlock form until `POST /api/history/unlock` succeeds.
 - Shows the recovered plaintext and target hash for successful runs after the required acknowledgement.
 - Persists successful plaintext/hash pairs and run metadata in local SQLite (same default database as the CLI, `~/.password_audit/history.db`).
-- Removes temporary wordlist uploads after completion, cancellation, validation failure, and application shutdown (graceful shutdown; a force-killed process cannot run its cleanup hook).
+- Paused jobs survive a server restart: the job record and its uploaded wordlist/hashlist move to `<database dir>/paused_jobs/` and are restored on startup in the `paused` state. Resuming deletes that record; cancelling a paused job finalizes it as cancelled and deletes the record and kept uploads; starting a new audit discards a restored paused job. Runs that were executing (not paused) at shutdown are not resumable. The encryption passphrase is never persisted. Paused-job artifacts are restricted to the current user on POSIX and abandoned records older than 7 days are removed at startup.
+- Removes temporary wordlist uploads after completion, cancellation, validation failure, and application shutdown (graceful shutdown; a force-killed process cannot run its cleanup hook). Uploads belonging to a paused job are exempt from temp cleanup because they move to the paused-job store.
 
 ## Error Behavior
 

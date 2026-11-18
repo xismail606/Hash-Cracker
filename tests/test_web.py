@@ -6,6 +6,7 @@ workloads finish within the polling timeout.
 """
 
 import io
+import os
 import time
 
 import pytest
@@ -81,13 +82,34 @@ class TestIdentify:
         payload = client.post(
             "/api/identify", json={"hash": "8743b52063cd84097a65d1633f5c74f5"}
         ).get_json()
-        assert payload["compatible_algorithms"] == ["md5", "ntlm", "md4"]
+        assert payload["compatible_algorithms"] == ["md5", "ntlm", "md4", "lm"]
         assert payload["ambiguous"] is True
 
     def test_invalid_hash_rejected(self, client):
         response = client.post("/api/identify", json={"hash": "not-a-hash"})
         assert response.status_code == 400
         assert response.get_json()["valid"] is False
+
+
+class TestFormatsEndpoint:
+    def test_formats_lists_all_registries(self, client):
+        payload = client.get("/api/formats").get_json()
+        names = [entry["name"] for entry in payload["algorithms"]]
+        assert "md5" in names and "lm" in names and "bcrypt" in names
+        assert payload["labels"]["md5"] == "MD5"
+        assert payload["salted_by_length"]["32"] == ["md5_pass_salt", "md5_salt_pass"]
+        preset_names = [preset["name"] for preset in payload["rules_presets"]]
+        assert preset_names[0] == "none" and "all" in preset_names
+        charset_names = [preset["name"] for preset in payload["charset_presets"]]
+        assert charset_names == ["lower", "upper", "digits", "symbols"]
+        assert payload["max_workers"] == 8
+        assert payload["hard_max_candidates"] == 10_000_000
+
+    def test_every_algorithm_has_a_label(self, client):
+        payload = client.get("/api/formats").get_json()
+        for entry in payload["algorithms"]:
+            assert entry["name"] in payload["labels"]
+            assert entry["kind"] in ("fast", "salted", "adaptive")
 
 
 class TestAuditLifecycle:
@@ -136,6 +158,31 @@ class TestAuditLifecycle:
         payload = wait_for_job(client, job_id)
         assert payload["result"]["status"] == "no_match"  # space fully covered (110)
         assert payload["result"]["attempts"] == 110
+
+    def test_hashlist_audit_honors_worker_count(self, client, csrf):
+        response = post_audit(
+            client, csrf,
+            mode="dictionary",
+            workers="2",
+            wordlist=(io.BytesIO(b"hashcat\n"), "words.txt"),
+            hashlist=(io.BytesIO(b"md5:8743b52063cd84097a65d1633f5c74f5\n"), "targets.txt"),
+        )
+        assert response.status_code == 202
+        job_id = response.get_json()["job_id"]
+        payload = wait_for_job(client, job_id)
+        assert payload["workers"] == 2
+        assert payload["result"]["status"] == "match"
+
+    def test_hashlist_audit_rejects_invalid_worker_count(self, client, csrf):
+        response = post_audit(
+            client, csrf,
+            mode="dictionary",
+            workers="0",
+            wordlist=(io.BytesIO(b"hashcat\n"), "words.txt"),
+            hashlist=(io.BytesIO(b"md5:8743b52063cd84097a65d1633f5c74f5\n"), "targets.txt"),
+        )
+        assert response.status_code == 400
+        assert "between 1 and" in response.get_json()["error"]
 
 
 class TestUploadLimits:
@@ -260,6 +307,30 @@ class TestExport:
         payload = response.get_json()
         assert "runs" in payload and "batches" in payload
 
+    def test_csv_export_includes_batch_rows_after_hashlist_audit(self, client, csrf):
+        import csv as csv_mod
+
+        started = post_audit(
+            client, csrf,
+            mode="dictionary",
+            workers="2",
+            wordlist=(io.BytesIO(b"hashcat\n"), "words.txt"),
+            hashlist=(
+                io.BytesIO(b"md5:8743b52063cd84097a65d1633f5c74f5\n"),
+                "targets.txt",
+            ),
+        )
+        wait_for_job(client, started.get_json()["job_id"])
+        response = client.get("/api/export?format=csv")
+        rows = list(csv_mod.DictReader(io.StringIO(response.get_data(as_text=True))))
+        batch_rows = [r for r in rows if r["target_count"]]
+        assert len(batch_rows) == 1
+        assert batch_rows[0]["target_count"] == "1"
+        assert batch_rows[0]["batch_id"]
+        run_rows = [r for r in rows if r["run_id"] and not r["target_count"]]
+        assert len(run_rows) >= 1
+        assert all(r["batch_id"] for r in run_rows)
+
 
 class TestPauseResume:
     def test_pause_resume_flow(self, client, csrf):
@@ -313,6 +384,233 @@ class TestPauseResume:
         job_id = response.get_json()["job_id"]
         wait_for_job(client, job_id)
         assert client.post(f"/api/audits/{job_id}/resume", headers=auth(client, csrf)).status_code == 400
+
+    def test_pause_resume_hashlist_flow(self, client, csrf):
+        from hashlib import md5
+
+        target = md5(b"no-such-candidate-in-bruteforce").hexdigest()
+        response = post_audit(
+            client, csrf,
+            mode="brute-force",
+            charset="lower",
+            min_length="1",
+            max_length="7",
+            max_candidates="10000000",
+            workers="4",
+            hashlist=(io.BytesIO(f"md5:{target}\n".encode()), "targets.txt"),
+        )
+        job_id = response.get_json()["job_id"]
+
+        pause_response = client.post(f"/api/audits/{job_id}/pause", headers=auth(client, csrf))
+        assert pause_response.status_code == 202
+        deadline = time.time() + 10
+        state = None
+        while time.time() < deadline:
+            state = client.get(f"/api/audits/{job_id}").get_json()["state"]
+            if state == "paused":
+                break
+            time.sleep(0.1)
+        assert state == "paused"
+
+        resume_response = client.post(f"/api/audits/{job_id}/resume", headers=auth(client, csrf))
+        assert resume_response.status_code == 200
+        payload = wait_for_job(client, job_id, timeout=90)
+        assert payload["result"]["status"] in ("no_match", "budget_exhausted")
+        assert payload["result"]["attempts"] >= 1000
+
+    def test_pause_resume_rules_flow(self, client, csrf):
+        response = post_audit(
+            client, csrf,
+            mode="dictionary",
+            hash="f" * 32,
+            algorithm="md5",
+            workers="4",
+            rules="append_digits_0_99",
+            max_candidates="10000000",
+            wordlist=(io.BytesIO(b"word-1\nword-2\n" + b"word-x\n" * 50), "words.txt"),
+        )
+        job_id = response.get_json()["job_id"]
+
+        pause_response = client.post(f"/api/audits/{job_id}/pause", headers=auth(client, csrf))
+        assert pause_response.status_code == 202
+        deadline = time.time() + 10
+        state = None
+        while time.time() < deadline:
+            state = client.get(f"/api/audits/{job_id}").get_json()["state"]
+            if state == "paused":
+                break
+            time.sleep(0.1)
+        assert state == "paused"
+
+        resume_response = client.post(f"/api/audits/{job_id}/resume", headers=auth(client, csrf))
+        assert resume_response.status_code == 200
+        payload = wait_for_job(client, job_id, timeout=90)
+        assert payload["result"]["status"] == "no_match"
+        # 52 words * 101 variants (original + 100 digit suffixes) = 5252.
+        assert payload["result"]["attempts"] == 5252
+
+
+class TestPausedJobSurvivesRestart:
+    """A paused dashboard job persists next to the history database and is
+    restored by a fresh create_app (server restart) until resumed, cancelled,
+    or replaced."""
+
+    def _pause_job(self, client, csrf):
+        # 350 words * 101 variants = 35350 candidates. The pause event is set
+        # immediately after start, before the first batch is scheduled, so
+        # the paused pass deterministically examines nothing.
+        response = post_audit(
+            client, csrf,
+            mode="dictionary",
+            hash="f" * 32,
+            algorithm="md5",
+            workers="4",
+            rules="append_digits_0_99",
+            max_candidates="10000000",
+            wordlist=(io.BytesIO(b"wordx\n" * 350), "words.txt"),
+        )
+        assert response.status_code == 202
+        job_id = response.get_json()["job_id"]
+        pause_response = client.post(
+            f"/api/audits/{job_id}/pause", headers=auth(client, csrf)
+        )
+        assert pause_response.status_code == 202
+        deadline = time.time() + 10
+        state = None
+        while time.time() < deadline:
+            state = client.get(f"/api/audits/{job_id}").get_json()["state"]
+            if state == "paused":
+                break
+            time.sleep(0.1)
+        assert state == "paused"
+        return job_id
+
+    def test_paused_job_restored_after_restart_and_resumes(self, tmp_path, client, csrf):
+        from password_audit.web import create_app
+
+        job_id = self._pause_job(client, csrf)
+
+        # Simulate a server restart: a fresh app over the same database path
+        # also reads the same paused_jobs directory.
+        restarted_app = create_app(
+            static_folder=tmp_path / "no-frontend",
+            db_path=tmp_path / "test-history.db",
+        )
+        restarted_client = restarted_app.test_client()
+        state = restarted_client.get(f"/api/audits/{job_id}").get_json()
+        assert state["state"] == "paused"
+        assert state["mode"] == "dictionary"
+
+        # The uploaded wordlist was moved out of the temp directory.
+        paused_files = {p.name for p in (tmp_path / "paused_jobs").iterdir()}
+        assert f"{job_id}.json" in paused_files
+        assert any(name.endswith(".txt") for name in paused_files)
+
+        restarted_csrf = restarted_client.get("/api/session").get_json()["csrf_token"]
+        resume = restarted_client.post(
+            f"/api/audits/{job_id}/resume", headers={"X-CSRF-Token": restarted_csrf}
+        )
+        assert resume.status_code == 200
+        payload = wait_for_job(restarted_client, job_id, timeout=90)
+        assert payload["result"]["status"] == "no_match"
+        # Resuming from a zero-examined pause covers the whole stream.
+        assert payload["result"]["attempts"] == 35350
+        # The restart-recovery record is gone after a successful resume.
+        assert not (tmp_path / "paused_jobs" / f"{job_id}.json").exists()
+
+    def test_cancel_after_restart_discards_persisted_job(self, tmp_path, client, csrf):
+        from password_audit.web import create_app
+
+        job_id = self._pause_job(client, csrf)
+        restarted_app = create_app(
+            static_folder=tmp_path / "no-frontend",
+            db_path=tmp_path / "test-history.db",
+        )
+        restarted_client = restarted_app.test_client()
+        restarted_csrf = restarted_client.get("/api/session").get_json()["csrf_token"]
+        response = restarted_client.post(
+            f"/api/audits/{job_id}/cancel", headers={"X-CSRF-Token": restarted_csrf}
+        )
+        assert response.status_code == 200
+        assert response.get_json()["state"] == "cancelled"
+        payload = restarted_client.get(f"/api/audits/{job_id}").get_json()
+        assert payload["state"] == "cancelled"
+        assert payload["result"]["status"] == "cancelled"
+        # Persisted state and the kept upload are both removed.
+        assert list((tmp_path / "paused_jobs").iterdir()) == []
+
+    def test_new_audit_after_restart_abandons_persisted_job(self, tmp_path, client, csrf):
+        from password_audit.web import create_app
+
+        old_job_id = self._pause_job(client, csrf)
+        restarted_app = create_app(
+            static_folder=tmp_path / "no-frontend",
+            db_path=tmp_path / "test-history.db",
+        )
+        restarted_client = restarted_app.test_client()
+        restarted_csrf = restarted_client.get("/api/session").get_json()["csrf_token"]
+        response = restarted_client.post(
+            "/api/audits",
+            data={
+                "mode": "brute-force",
+                "hash": "f" * 64,
+                "algorithm": "sha256",
+                "charset": "digits",
+                "min_length": "1",
+                "max_length": "2",
+                "max_candidates": "200",
+                "workers": "2",
+                "acknowledge_retention": "true",
+            },
+            content_type="multipart/form-data",
+            headers={"X-CSRF-Token": restarted_csrf},
+        )
+        assert response.status_code == 202
+        # The restored paused job is replaced and its persisted state removed.
+        assert restarted_client.get(f"/api/audits/{old_job_id}").status_code == 404
+        assert list((tmp_path / "paused_jobs").iterdir()) == []
+
+    def test_stale_paused_records_are_cleaned_up(self, tmp_path, client, csrf):
+        import json as json_mod
+
+        from password_audit.web import create_app
+
+        job_id = self._pause_job(client, csrf)
+        paused = tmp_path / "paused_jobs"
+        newest = paused / f"{job_id}.json"
+        ten_days_ago = time.time() - 10 * 86400
+        os.utime(newest, (ten_days_ago, ten_days_ago))
+
+        orphan = paused / "deadbeef.txt"
+        orphan.write_bytes(b"secret\n")
+        stale = paused / "deadbeef.json"
+        stale.write_text(
+            json_mod.dumps({"job_id": "deadbeef", "temp_path": "deadbeef.txt"}),
+            encoding="utf-8",
+        )
+        eleven_days_ago = ten_days_ago - 86400
+        os.utime(stale, (eleven_days_ago, eleven_days_ago))
+
+        restarted_app = create_app(
+            static_folder=tmp_path / "no-frontend",
+            db_path=tmp_path / "test-history.db",
+        )
+        assert not stale.exists()
+        assert not orphan.exists()
+        # The newest record survives and is restored.
+        assert newest.exists()
+        assert restarted_app.test_client().get(f"/api/audits/{job_id}").status_code == 200
+
+    @pytest.mark.skipif(os.name != "posix", reason="POSIX modes only")
+    def test_paused_artifacts_are_owner_only(self, tmp_path, client, csrf):
+        job_id = self._pause_job(client, csrf)
+        paused = tmp_path / "paused_jobs"
+        assert paused.stat().st_mode & 0o777 == 0o700
+        assert (paused / f"{job_id}.json").stat().st_mode & 0o777 == 0o600
+        uploads = list(paused.glob("*.txt"))
+        assert uploads
+        for upload in uploads:
+            assert upload.stat().st_mode & 0o777 == 0o600
 
 
 class TestPlaintextWithholding:

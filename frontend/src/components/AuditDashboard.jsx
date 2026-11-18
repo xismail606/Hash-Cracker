@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Search,
   FileText,
@@ -23,31 +23,6 @@ import {
 // blue on blue-tinted near black with a glowing radial gradient, translucent
 // rounded cards, glow accent buttons, Geist Sans/Mono, dark/light theme toggle.
 
-const ALGORITHM_LABELS = {
-  md5: "MD5",
-  md5_pass_salt: "md5($pass.$salt)",
-  md5_salt_pass: "md5($salt.$pass)",
-  sha1_pass_salt: "sha1($pass.$salt)",
-  sha1_salt_pass: "sha1($salt.$pass)",
-  sha256_pass_salt: "sha256($pass.$salt)",
-  sha256_salt_pass: "sha256($salt.$pass)",
-  sha512_pass_salt: "sha512($pass.$salt)",
-  sha512_salt_pass: "sha512($salt.$pass)",
-  ripemd160: "RIPEMD-160",
-  sha512_224: "SHA-512/224",
-  sha512_256: "SHA-512/256",
-  bcrypt: "bcrypt",
-  sha512crypt: "sha512crypt",
-  phpass: "phpass",
-  sha256: "SHA-256",
-  ntlm: "NTLM",
-  sha1: "SHA-1",
-  sha224: "SHA-224",
-  sha384: "SHA-384",
-  sha512: "SHA-512",
-  md4: "MD4",
-  lm: "LM",
-};
 const STATUS_LABELS = {
   match: "Match",
   no_match: "No match",
@@ -67,34 +42,7 @@ const STATUS_TONE = {
   invalid_input: "text-danger border-danger/40 bg-danger/10",
   storage_error: "text-danger border-danger/40 bg-danger/10",
 };
-const SALTED_BY_LENGTH = {
-  32: ["md5_pass_salt", "md5_salt_pass"],
-  40: ["sha1_pass_salt", "sha1_salt_pass"],
-  64: ["sha256_pass_salt", "sha256_salt_pass"],
-  128: ["sha512_pass_salt", "sha512_salt_pass"],
-};
-const isSalted = (name) => name.endsWith("_pass_salt") || name.endsWith("_salt_pass");
-const HARD_MAX_CANDIDATES = 10_000_000;
-
-const RULES_PRESETS = [
-  { name: "none", label: "No rules (original words only)" },
-  { name: "capitalize", label: "Capitalize first letter" },
-  { name: "upper", label: "UPPERCASE" },
-  { name: "lower", label: "lowercase" },
-  { name: "leetspeak", label: "Leetspeak (a→4, e→3, i→1, o→0, s→5)" },
-  { name: "append_digits_0_99", label: "Append digits 0–99" },
-  { name: "append_years", label: "Append years 1990–2029" },
-  { name: "all", label: "All of the above combined" },
-];
-
-const CHARSET_PRESETS = [
-  { name: "lower", label: "lowercase a-z" },
-  { name: "upper", label: "uppercase A-Z" },
-  { name: "digits", label: "digits 0-9" },
-  { name: "symbols", label: "symbols" },
-];
-
-const labelClass =
+const isSalted = (name) => name.endsWith("_pass_salt") || name.endsWith("_salt_pass");const labelClass =
   "mb-1.5 block text-[10px] font-bold section-label text-text-muted";
 
 async function apiFetch(path, options = {}) {
@@ -146,7 +94,7 @@ export default function AuditDashboard() {
   const [acknowledged, setAcknowledged] = useState(false);
   const [salt, setSalt] = useState("");
   const [etaSeconds, setEtaSeconds] = useState(null);
-  const [storePlaintext, setStorePlaintext] = useState(true);
+  const [storePlaintext, setStorePlaintext] = useState(false);
 
   // Job state
   const [jobId, setJobId] = useState(null);
@@ -155,8 +103,18 @@ export default function AuditDashboard() {
   const [error, setError] = useState(null);
   const [csrfToken, setCsrfToken] = useState("");
   const [serverMissing, setServerMissing] = useState(false);
+  // Supported-format registries fetched from GET /api/formats (the Python
+  // registries are the single source of truth for labels and limits).
+  const [formats, setFormats] = useState(null);
   const pollRef = useRef(null);
   const progressRef = useRef(null);
+
+  // Display label for an algorithm name from the server registry; unknown
+  // names fall back to the raw identifier.
+  const label = useCallback(
+    (name) => formats?.labels?.[name] || name,
+    [formats],
+  );
 
   // History
   const [history, setHistory] = useState(null);
@@ -181,6 +139,14 @@ export default function AuditDashboard() {
         setCsrfToken(payload.csrf_token);
       })
       .catch(() => setServerMissing(true));
+    fetch("/api/formats", { credentials: "same-origin" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`formats status ${response.status}`);
+        setFormats(await response.json());
+      })
+      .catch(() => {
+        // The session fetch reports a missing backend; leave formats unset.
+      });
     refreshHistory();
     return () => clearInterval(pollRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -302,7 +268,7 @@ export default function AuditDashboard() {
       form.append("workers", String(workers));
       if (isSalted(algorithm)) {
         if (!salt.trim())
-          throw new Error(`Salted format ${ALGORITHM_LABELS[algorithm] || algorithm} requires a salt value.`);
+          throw new Error(`Salted format ${label(algorithm)} requires a salt value.`);
         form.append("salt", salt.trim());
       }
       form.append("acknowledge_retention", "true");
@@ -395,7 +361,7 @@ export default function AuditDashboard() {
   const ambiguous = identification?.ambiguous;
   const saltedOptions =
     identification?.valid
-      ? SALTED_BY_LENGTH[identification.normalized.length] || []
+      ? formats?.salted_by_length?.[identification.normalized.length] || []
       : [];
   const canAudit =
     acknowledged &&
@@ -449,7 +415,14 @@ export default function AuditDashboard() {
       const names = isLm ? ["upper"] : ["lower", "digits"];
       const alphabetSize = isLm ? 26 : 36; // |upper| vs |lower + digits|
       const alphabetLabel = isLm ? "upper" : "lower+digits";
-      const budget = HARD_MAX_CANDIDATES;
+      const budget = formats?.hard_max_candidates;
+      if (!budget) {
+        setSuggestion({
+          ok: false,
+          text: "The format registry is not loaded yet; try Auto-fit again.",
+        });
+        return;
+      }
       let fitLength = 0;
       let covered = 0;
       for (let len = 1; len <= 12; len++) {
@@ -473,7 +446,7 @@ export default function AuditDashboard() {
       setSuggestion({
         ok: true,
         text: `Identified ${
-          payload.compatible_algorithms.map((n) => ALGORITHM_LABELS[n]).join(", ")
+          payload.compatible_algorithms.map((n) => label(n)).join(", ")
         }${
           payload.ambiguous
             ? " — ambiguous shape, pick the algorithm below before starting"
@@ -550,7 +523,7 @@ export default function AuditDashboard() {
                 hex characters · Compatible formats:{" "}
                 <span className="font-semibold text-text">
                   {identification.compatible_algorithms
-                    .map((name) => ALGORITHM_LABELS[name])
+                    .map((name) => label(name))
                     .join(", ")}
                 </span>
                 {ambiguous && (
@@ -577,7 +550,7 @@ export default function AuditDashboard() {
                         setSalt("");
                       }}
                     />
-                    {ALGORITHM_LABELS[name]}
+                    {label(name)}
                   </label>
                 ))}
               </div>
@@ -599,7 +572,7 @@ export default function AuditDashboard() {
                     <option value="">None (unsalted shape formats only)</option>
                     {saltedOptions.map((name) => (
                       <option key={name} value={name}>
-                        {ALGORITHM_LABELS[name]}
+                        {label(name)}
                       </option>
                     ))}
                   </select>
@@ -732,7 +705,7 @@ export default function AuditDashboard() {
                   onChange={(e) => setRulesPreset(e.target.value)}
                   disabled={running}
                 >
-                  {RULES_PRESETS.map((preset) => (
+                  {(formats?.rules_presets ?? []).map((preset) => (
                     <option key={preset.name} value={preset.name}>
                       {preset.label}
                     </option>
@@ -758,7 +731,7 @@ export default function AuditDashboard() {
               <div>
                 <span className={labelClass}>Character sets</span>
                 <div className="flex flex-wrap gap-x-6 gap-y-2">
-                  {CHARSET_PRESETS.map((preset) => (
+                  {(formats?.charset_presets ?? []).map((preset) => (
                     <label
                       key={preset.name}
                       className="flex cursor-pointer items-center gap-2 text-sm"
@@ -895,7 +868,7 @@ export default function AuditDashboard() {
             />
             <span>
               Store the recovered plaintext in local history on a match
-              (uncheck to record the match without it).
+              (off by default; tick to keep the plaintext/hash pair).
             </span>
           </label>
           <div className="mt-4 flex gap-3">
@@ -1078,7 +1051,7 @@ export default function AuditDashboard() {
                             </span>
                           </td>
                           <td className="py-2 pr-4">
-                            {ALGORITHM_LABELS[t.algorithm] || t.algorithm}
+                            {label(t.algorithm)}
                           </td>
                           <td className="py-2 pr-4 break-all">{t.hash.slice(0, 24)}…</td>
                           <td className="py-2 pr-4 text-right">
@@ -1245,7 +1218,7 @@ export default function AuditDashboard() {
                         </span>
                       </td>
                       <td className="py-2 pr-4">
-                        {ALGORITHM_LABELS[record.algorithm] || record.algorithm}
+                        {label(record.algorithm)}
                       </td>
                       <td className="py-2 pr-4">{record.mode}</td>
                       <td className="py-2 pr-4 text-right text-text">

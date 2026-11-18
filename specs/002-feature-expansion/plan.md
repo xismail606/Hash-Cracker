@@ -96,7 +96,7 @@ Total core (5–9): roughly 7–10 working sessions.
 
 ## Implementation Notes (recorded during implementation)
 
-- Phases 8–10 completed 2026-11-06. Pause/resume works for single-target dictionary and brute-force runs (refused for hashlist and rule-expanded streams); resume validates dictionary wordlist size.
+- Phases 8–10 completed 2026-11-06. Pause/resume works for single-target dictionary and brute-force runs; resume validates dictionary wordlist size. The v3 maintenance round extended pause/resume to hashlist and rule-expanded streams and made paused jobs survive a server restart.
 - Encryption is application-level: scrypt-derived key from an operator passphrase, Fernet over the `matched_plaintext` column only, per-database salt + verification token in a `history_meta` table. Requires the optional `encrypt` extra (`pip install password-audit[encrypt]`).
 - Adaptive formats verify via Passlib handlers against the full stored hash string (`verify_candidate`); bcrypt needs the pinned `bcrypt>=3.2,<4.1` backend (`adaptive` extra) because passlib 1.7.4 breaks with bcrypt >= 4.1. Adaptive targets are recognized by prefix in `assess_hash`.
 - RIPEMD-160 research (T074) succeeded: a pure-Python implementation validated against the official vectors and hashcat mode 600; 40-hex is now ambiguous between SHA-1 and RIPEMD-160. The table-authoring process initially produced wrong word-order groups; the tables were extracted programmatically from a known-good reference implementation (karpathy/cryptos) and re-validated.

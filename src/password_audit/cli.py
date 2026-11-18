@@ -20,6 +20,7 @@ import time
 import uuid
 from pathlib import Path
 
+from . import __version__
 from .algorithms import (
     ALGORITHM_NAMES,
     HashInputError,
@@ -38,32 +39,32 @@ from .bruteforce import (
 from .candidates import count_dictionary_lines, iter_wordlist_batches, parse_hashlist
 from .engine import (
     DEFAULT_WORKERS,
-    EngineInputError,
-    run_hashlist_audit,
     STATUS_BUDGET_EXHAUSTED,
-    clamp_workers,
     STATUS_CANCELLED,
     STATUS_INTERRUPTED,
     STATUS_MATCH,
     STATUS_NO_MATCH,
     STATUS_STORAGE_ERROR,
+    EngineInputError,
+    clamp_workers,
     run_audit,
+    run_hashlist_audit,
 )
-from .rules import iter_rule_expanded, resolve_rules_preset
 from .history import (
     DEFAULT_DB_PATH,
     HistoryError,
     connect,
+    decrypt_stored,
     export_csv,
     export_json,
-    list_runs,
-    decrypt_stored,
     init_encryption,
     is_encrypted_value,
+    list_runs,
     record_batch,
     record_run,
     utc_now,
 )
+from .rules import iter_rule_expanded, resolve_rules_preset
 
 EXIT_OK = 0
 EXIT_INVALID = 1
@@ -590,6 +591,12 @@ def build_parser() -> argparse.ArgumentParser:
             "Offline hash identification and password auditing for authorized "
             "local targets. No remote logins, no network access."
         ),
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+        help="Show the program version and exit",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 

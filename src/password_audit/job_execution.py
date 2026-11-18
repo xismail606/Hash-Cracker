@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 import uuid
@@ -26,8 +27,9 @@ from .history import (
 
 _LOGGER = logging.getLogger(__name__)
 
-_STATE_RUNNING = "running"
-_STATE_VALIDATING = "validating"
+# Job states shared with the web API.
+STATE_RUNNING = "running"
+STATE_VALIDATING = "validating"
 
 
 @dataclass
@@ -54,7 +56,7 @@ class DashboardJob:
     """Mutable state exposed to the dashboard while one audit runs."""
 
     job_id: str
-    state: str = _STATE_VALIDATING
+    state: str = STATE_VALIDATING
     target_hash: str = ""
     algorithm: str = ""
     mode: str = ""
@@ -84,13 +86,17 @@ class AuditJobRunner:
         job: DashboardJob,
         request: AuditJobRequest,
         db_path: str,
+        on_pause=None,
     ) -> None:
         self.job = job
         self.request = request
         self.db_path = db_path
+        # Optional callback invoked when the run pauses so the caller can
+        # persist the job state (web.py saves it for restart recovery).
+        self.on_pause = on_pause
 
     def run(self) -> None:
-        self.job.state = _STATE_RUNNING
+        self.job.state = STATE_RUNNING
         try:
             self._run_job(utc_now())
         except Exception:
@@ -100,6 +106,14 @@ class AuditJobRunner:
         finally:
             self._cleanup_uploads()
 
+    def _handle_pause(self) -> None:
+        if self.on_pause is None:
+            return
+        try:
+            self.on_pause(self.job)
+        except Exception:
+            _LOGGER.exception("Persisting the paused job state failed")
+
     def _run_job(self, started_at: str) -> None:
         if self.request.targets is None:
             self._run_single_target(started_at)
@@ -108,6 +122,11 @@ class AuditJobRunner:
 
     def _run_hashlist(self, started_at: str) -> None:
         outcome = self._execute_hashlist()
+        if outcome.status == STATUS_PAUSED:
+            self.job.resume_state = outcome.resume
+            self.job.state = STATUS_PAUSED
+            self._handle_pause()
+            return
         job_result = hashlist_job_result(self.job, outcome)
         self.job.attempts = outcome.attempts
         self.job.elapsed_ms = outcome.elapsed_ms
@@ -186,6 +205,8 @@ class AuditJobRunner:
             budget=source.budget,
             total_space=source.total_space,
             cancel_event=self.job.cancel_event,
+            pause_event=self.job.pause_event,
+            resume_state=self.job.resume_state,
             progress_callback=self._progress,
         )
 
@@ -194,6 +215,7 @@ class AuditJobRunner:
         if outcome.status == STATUS_PAUSED:
             self.job.resume_state = outcome.resume
             self.job.state = STATUS_PAUSED
+            self._handle_pause()
             return
         job_result = single_target_job_result(self.job, outcome)
         self.job.attempts = outcome.attempts
@@ -257,10 +279,8 @@ class AuditJobRunner:
             return
         for path in (self.job.temp_path, self.job.temp_hashlist):
             if path is not None:
-                try:
+                with contextlib.suppress(OSError):
                     path.unlink(missing_ok=True)
-                except OSError:
-                    pass
 
 
 def hashlist_job_result(job: DashboardJob, outcome) -> dict:

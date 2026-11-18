@@ -84,14 +84,15 @@ try:  # pragma: no cover - exercised only on interpreters where Passlib works
         return _passlib_nthash.hash(candidate).lower()
 
     def lm_hash(candidate: str) -> str:
-        """Return the LAN Manager digest via Passlib (uppercase, 14-byte key).
+        """Return the full LAN Manager digest via Passlib (32 hex, lowercase).
 
-        Only the first 8-byte DES block (16 hex characters) is returned,
-        matching the 16-hex LM format hashcat uses. The first block depends
-        solely on the first seven characters of the candidate, so a 16-hex
-        LM target identifies passwords by their first seven characters.
+        The digest concatenates the two 8-byte DES blocks derived from the
+        candidate's first fourteen characters (uppercased, zero-padded). The
+        first block depends solely on the first seven characters, so the
+        16-hex hashcat form identifies passwords by their first seven
+        characters while the 32-hex form covers fourteen.
         """
-        return _passlib_lmhash.hash(candidate).lower()[:16]
+        return _passlib_lmhash.hash(candidate).lower()
 
 except Exception:  # pragma: no cover - fallback path for Python 3.13+
     def ntlm_hash(candidate: str) -> str:
@@ -185,4 +186,9 @@ if "_ADAPTIVE_HANDLERS" not in globals():
                 return bool(handler.verify(candidate, target))
             except (ValueError, TypeError):
                 return False
-        return hash_candidate(candidate, algorithm, salt) == target
+        digest = hash_candidate(candidate, algorithm, salt)
+        if algorithm == "lm" and len(target) == 16:
+            # 16-hex LM targets compare the first DES block only, matching
+            # hashcat mode 3000 semantics (first seven characters).
+            return digest[:16] == target
+        return digest == target

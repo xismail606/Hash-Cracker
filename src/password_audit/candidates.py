@@ -14,13 +14,13 @@ irregular dictionary data:
 Hashlists (one audit target per line) are fully validated up front: lines may
 carry an explicit ``algorithm:hash`` prefix or a bare hash that resolves to a
 single supported format. Blank lines and ``#`` comments are skipped. A bare
-32-hex line is rejected because MD5/NTLM/MD4 cannot be distinguished by shape.
+32-hex line is rejected because MD5/NTLM/MD4/LM cannot be distinguished by shape.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 from .algorithms import (
     ALGORITHM_NAMES,
@@ -40,7 +40,7 @@ def iter_wordlist_batches(
 ) -> Iterator[list[str]]:
     """Yield bounded batches of candidates read from a UTF-8 wordlist."""
     batch: list[str] = []
-    with open(path, "r", encoding=encoding, errors="replace", newline="") as handle:
+    with open(path, encoding=encoding, errors="replace", newline="") as handle:
         for line in handle:
             batch.append(line.rstrip("\r\n"))
             if len(batch) >= batch_size:
@@ -76,7 +76,7 @@ def parse_hashlist(path: str | Path) -> list[dict]:
     """
     entries: list[dict] = []
     try:
-        handle = open(path, "r", encoding="utf-8")
+        handle = open(path, encoding="utf-8")
     except OSError as exc:
         raise HashInputError(f"Cannot read the hashlist file: {exc}") from exc
     with handle:

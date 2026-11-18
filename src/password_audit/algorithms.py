@@ -35,6 +35,33 @@ ALGORITHM_NAMES = (
     "phpass",
 )
 
+# Human-readable labels for interface selects (dashboard, docs).
+ALGORITHM_LABELS = {
+    "md5": "MD5",
+    "sha256": "SHA-256",
+    "ntlm": "NTLM",
+    "sha1": "SHA-1",
+    "sha224": "SHA-224",
+    "sha384": "SHA-384",
+    "sha512": "SHA-512",
+    "md4": "MD4",
+    "lm": "LM",
+    "md5_pass_salt": "md5($pass.$salt)",
+    "md5_salt_pass": "md5($salt.$pass)",
+    "sha1_pass_salt": "sha1($pass.$salt)",
+    "sha1_salt_pass": "sha1($salt.$pass)",
+    "sha256_pass_salt": "sha256($pass.$salt)",
+    "sha256_salt_pass": "sha256($salt.$pass)",
+    "sha512_pass_salt": "sha512($pass.$salt)",
+    "sha512_salt_pass": "sha512($salt.$pass)",
+    "sha512_224": "SHA-512/224",
+    "sha512_256": "SHA-512/256",
+    "ripemd160": "RIPEMD-160",
+    "bcrypt": "bcrypt",
+    "sha512crypt": "sha512crypt",
+    "phpass": "phpass",
+}
+
 # Digest length in hexadecimal characters per supported algorithm.
 ALGORITHM_LENGTHS = {
     "md5": 32,
@@ -59,13 +86,26 @@ ALGORITHM_LENGTHS = {
     "ripemd160": 40,
 }
 
+# Formats that accept more than one target length. LM accepts the hashcat
+# first-block digest (16 hex, identifies the first seven password characters)
+# or the full two-block digest (32 hex, identifies the first fourteen).
+ALGORITHM_LENGTH_VARIANTS = {
+    "lm": (16, 32),
+}
+
+
+def accepted_lengths(algorithm: str) -> tuple[int, ...]:
+    """Return the hexadecimal target lengths ``algorithm`` accepts."""
+    return ALGORITHM_LENGTH_VARIANTS.get(algorithm, (ALGORITHM_LENGTHS[algorithm],))
+
+
 # Algorithms compatible with each hexadecimal digest length. Note that a
-# 32-character shape maps to three supported algorithms (MD5, NTLM, and MD4).
-# Salted formats are selected explicitly by name (shape identification lists
-# only the unsalted base formats).
+# 32-character shape maps to four supported algorithms (MD5, NTLM, MD4, and
+# the full 32-hex LM digest). Salted formats are selected explicitly by name
+# (shape identification lists only the unsalted base formats).
 ALGORITHMS_BY_LENGTH = {
     16: ("lm",),
-    32: ("md5", "ntlm", "md4"),
+    32: ("md5", "ntlm", "md4", "lm"),
     40: ("sha1", "ripemd160"),
     56: ("sha224", "sha512_224"),
     64: ("sha256", "sha512_256"),
@@ -138,7 +178,7 @@ def normalize_hash(value: str) -> str:
     if not trimmed:
         raise HashInputError(
             "The hash value is empty. Provide a hexadecimal digest such as "
-            "a 32-character (MD5/NTLM/MD4) or 64-character (SHA-256) value."
+            "a 32-character (MD5/NTLM/MD4/LM) or 64-character (SHA-256) value."
         )
     invalid = tuple(sorted({ch for ch in trimmed if ch not in "0123456789abcdefABCDEF"}))
     if invalid:
@@ -154,9 +194,10 @@ def assess_hash(value: str) -> HashAssessment:
     """Inspect a submitted hash and report compatible supported algorithms.
 
     The assessment never claims that a shape uniquely proves an algorithm.
-    A 32-hex value is always reported as ambiguous between MD5, NTLM, and MD4.
-    Adaptive formats (bcrypt, sha512crypt, phpass) are recognized by their
-    hash-string prefix; the full string is the target.
+    A 32-hex value is always reported as ambiguous between MD5, NTLM, MD4,
+    and the full 32-hex LM digest. Adaptive formats (bcrypt, sha512crypt,
+    phpass) are recognized by their hash-string prefix; the full string is
+    the target.
     """
     trimmed_probe = value.strip() if isinstance(value, str) else ""
     for prefix, adaptive_name in ADAPTIVE_PREFIXES.items():
@@ -175,8 +216,8 @@ def assess_hash(value: str) -> HashAssessment:
         raise HashInputError(
             f"Unsupported hash shape: {length} hexadecimal characters. "
             f"Supported formats are {expected} characters long "
-            "(LM: 16, MD5/NTLM/MD4: 32, SHA-1: 40, SHA-224: 56, SHA-256: 64, "
-            "SHA-384: 96, SHA-512: 128)."
+            "(LM: 16 or 32, MD5/NTLM/MD4: 32, SHA-1: 40, SHA-224: 56, "
+            "SHA-256: 64, SHA-384: 96, SHA-512: 128)."
         )
     return HashAssessment(
         submitted=value,
@@ -213,11 +254,12 @@ def select_algorithm(value: str, algorithm: str | None) -> tuple[HashAssessment,
     if is_adaptive(algorithm):
         # The target is the full hash string; length checks do not apply.
         return assessment, algorithm
-    expected = ALGORITHM_LENGTHS[algorithm]
-    if len(assessment.normalized) != expected:
+    accepted = accepted_lengths(algorithm)
+    if len(assessment.normalized) not in accepted:
+        shown = " or ".join(str(length) for length in accepted)
         raise HashInputError(
             f"The hash does not match the {algorithm} format: expected "
-            f"{expected} hexadecimal characters, got {len(assessment.normalized)}."
+            f"{shown} hexadecimal characters, got {len(assessment.normalized)}."
         )
     # Salted formats share their base digest's shape but are opt-in explicit
     # selections, so the shape-compatibility check does not apply to them.

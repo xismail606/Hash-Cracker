@@ -36,7 +36,7 @@ class TestAssessHash:
         ("value", "expected"),
         [
             ("299bd128c1101fd6", ("lm",)),  # 16 hex
-            ("8743b52063cd84097a65d1633f5c74f5", ("md5", "ntlm", "md4")),  # 32 hex
+            ("8743b52063cd84097a65d1633f5c74f5", ("md5", "ntlm", "md4", "lm")),  # 32 hex
             ("b89eaac7e61417341b710b727768294d0e6a277b", ("sha1", "ripemd160")),  # 40 hex
             ("e4fa1555ad877bf0ec455483371867200eee89550a93eff2f95a6198", ("sha224", "sha512_224")),
             ("1" * 64, ("sha256", "sha512_256")),
@@ -63,7 +63,7 @@ class TestAssessHash:
 
 class TestSelectAlgorithm:
     def test_unambiguous_shape_auto_selects(self):
-        assessment, algorithm = select_algorithm("2" * 96, None)
+        _, algorithm = select_algorithm("2" * 96, None)
         assert algorithm == "sha384"
 
     def test_ambiguous_shape_requires_explicit(self):
@@ -72,7 +72,7 @@ class TestSelectAlgorithm:
 
     def test_explicit_selection_accepted(self):
         for algorithm in ("md5", "ntlm", "md4"):
-            assessment, selected = select_algorithm(
+            _, selected = select_algorithm(
                 "8743b52063cd84097a65d1633f5c74f5", algorithm
             )
             assert selected == algorithm
@@ -80,6 +80,16 @@ class TestSelectAlgorithm:
     def test_wrong_length_for_algorithm_rejected(self):
         with pytest.raises(HashInputError, match="does not match the md5 format"):
             select_algorithm("b89eaac7e61417341b710b727768294d0e6a277b", "md5")
+
+    def test_lm_accepts_16_and_32_hex_targets(self):
+        _, first_block = select_algorithm("299bd128c1101fd6", "lm")
+        assert first_block == "lm"
+        _, full = select_algorithm("299bd128c1101fd6" + "a" * 16, "lm")
+        assert full == "lm"
+
+    def test_lm_rejects_other_lengths(self):
+        with pytest.raises(HashInputError, match="does not match the lm format"):
+            select_algorithm("a" * 40, "lm")
 
     def test_unsupported_shape_rejected_before_length_check(self):
         with pytest.raises(HashInputError, match="Unsupported hash shape"):

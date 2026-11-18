@@ -15,7 +15,7 @@ import json
 import secrets
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 DEFAULT_DB_PATH = Path.home() / ".password_audit" / "history.db"
@@ -73,6 +73,7 @@ EXPORT_COLUMNS = (
     "salt",
     "batch_id",
     "plaintext_withheld",
+    "target_count",
 )
 
 
@@ -120,7 +121,7 @@ class AuditRecord:
 
 def utc_now() -> str:
     """Return the current UTC time as an ISO-8601 string."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
 def connect(db_path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
@@ -276,7 +277,7 @@ def export_batches(conn: sqlite3.Connection) -> list[dict]:
         raise HistoryError(f"Cannot read batch records: {exc}") from exc
     keys = ("batch_id", "mode", "status", "attempts", "elapsed_ms", "worker_count",
             "started_at", "target_count")
-    return [dict(zip(keys, row)) for row in rows]
+    return [dict(zip(keys, row, strict=True)) for row in rows]
 
 
 ENCRYPT_PREFIX = "enc1:"
@@ -370,9 +371,30 @@ def export_rows(conn: sqlite3.Connection) -> list[dict]:
     return [record.as_dict() for record in list_runs(conn)]
 
 
+def combine_report_rows(rows: list[dict], batches: list[dict]) -> list[dict]:
+    """Merge run rows and hashlist batch rows into CSV-shaped rows.
+
+    Run rows carry ``target_count = None``; batch rows carry only the shared
+    batch fields (batch_id, mode, status, attempts, elapsed_ms, worker_count,
+    started_at, target_count) and leave the run-only columns empty.
+    """
+    combined = [{**row, "target_count": None} for row in rows]
+    combined.extend(
+        {column: batch.get(column) for column in EXPORT_COLUMNS}
+        for batch in batches
+    )
+    return combined
+
+
+def export_report_rows(conn: sqlite3.Connection) -> list[dict]:
+    """Return run rows followed by hashlist batch rows for CSV export."""
+    return combine_report_rows(export_rows(conn), export_batches(conn))
+
+
 def export_csv(conn: sqlite3.Connection, output_path: str | Path) -> Path:
-    """Write the full audit history to a local CSV file; return the path."""
-    rows = export_rows(conn)
+    """Write the full audit history (runs and hashlist batches) to a local CSV
+    file; return the path."""
+    rows = export_report_rows(conn)
     target = Path(output_path).expanduser()
     try:
         with open(target, "w", encoding="utf-8", newline="") as handle:
@@ -385,12 +407,14 @@ def export_csv(conn: sqlite3.Connection, output_path: str | Path) -> Path:
 
 
 def export_json(conn: sqlite3.Connection, output_path: str | Path) -> Path:
-    """Write the full audit history to a local JSON file; return the path."""
+    """Write the full audit history (runs and hashlist batches) to a local
+    JSON file; return the path."""
     rows = export_rows(conn)
+    batches = export_batches(conn)
     target = Path(output_path).expanduser()
     try:
         with open(target, "w", encoding="utf-8", newline="") as handle:
-            json.dump(rows, handle, indent=2)
+            json.dump({"runs": rows, "batches": batches}, handle, indent=2)
             handle.write("\n")
     except OSError as exc:
         raise HistoryError(f"Cannot write the JSON report to {target}: {exc}") from exc

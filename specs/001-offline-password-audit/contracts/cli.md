@@ -18,7 +18,7 @@ hashcrack serve [--port PORT]
 
 - Accept one hash string.
 - Recognize the supported format shapes: LM (16 hex), MD5 (32 hex), NTLM (32 hex), MD4 (32 hex), SHA-1 (40 hex), SHA-224 (56 hex), SHA-256 (64 hex), SHA-384 (96 hex), and SHA-512 (128 hex).
-- Report MD5/NTLM/MD4 as ambiguous for a 32-character hexadecimal input and require the operator to choose before auditing.
+- Report MD5/NTLM/MD4/LM as ambiguous for a 32-character hexadecimal input and require the operator to choose before auditing.
 - Reject malformed or unsupported shapes with a clear message.
 - Do not start candidate processing.
 
@@ -28,7 +28,7 @@ hashcrack serve [--port PORT]
   exclusive with a positional HASH). Lines carry an explicit
   `algorithm:hash` prefix (e.g. `md5:8743b520…`) or a bare hash whose shape
   resolves to exactly one supported format; bare 32-hex lines are rejected
-  because MD5/NTLM/MD4 cannot be proven by shape. Blank lines and `#`
+  because MD5/NTLM/MD4/LM cannot be proven by shape. Blank lines and `#`
   comments are skipped; the whole file is validated before processing.
 - Salted formats are not supported in hashlists (no per-target salt).
 - The run reports a per-target result table; history stores one record per
@@ -57,8 +57,14 @@ hashcrack serve [--port PORT]
 
 ### LM
 
-- The LM format is the first 8-byte DES block of the LAN Manager hash (16 hex characters), matching the format hashcat uses for mode 3000.
-- The first block depends only on the first seven characters of a candidate, so a 16-hex LM target identifies passwords by their first seven characters; a full 32-hex LM digest is out of scope.
+- LM accepts two target lengths: the hashcat mode-3000 first DES block
+  (16 hex) and the full two-block LAN Manager digest (32 hex, covering the
+  candidate's first fourteen characters).
+- The first block depends only on the first seven characters of a candidate,
+  so a 16-hex LM target identifies passwords by their first seven characters;
+  a longer candidate sharing those seven characters still matches a 16-hex
+  target but not a 32-hex target. In hashlists, both LM lengths are accepted
+  (`lm:<16-hex>` or `lm:<32-hex>`).
 
 ## Audit Modes
 
@@ -68,7 +74,7 @@ hashcrack serve [--port PORT]
 - Reads UTF-8 candidates in bounded chunks and removes line endings only.
 - Preserves duplicate lines and candidate order for attempt accounting.
 - Blank lines become empty-string candidates and count as attempts; bytes that are not valid UTF-8 are decoded with replacement characters so one malformed line cannot abort the run.
-- MD4 hashes the candidate's UTF-8 bytes (hashcat mode 900); NTLM hashes its UTF-16LE encoding. LM uppercases the candidate internally and uses only its first seven characters.
+- MD4 hashes the candidate's UTF-8 bytes (hashcat mode 900); NTLM hashes its UTF-16LE encoding. LM uppercases the candidate internally; a 16-hex LM target compares only the first DES block (first seven characters), while a 32-hex target compares both blocks (first fourteen).
 
 ### Brute Force
 
@@ -92,7 +98,7 @@ hashcrack serve [--port PORT]
 - Supports local history listing and CSV/JSON export.
 - Database and export paths are local filesystem paths.
 - The default database location is `~/.password_audit/history.db`; every command that touches history accepts `--database PATH` (including `audit`, `history`, and `export`) to use another local file.
-- `history [--limit N]` lists records newest first; `export PATH [--format csv|json]` writes all records with columns run_id, started_at, completed_at, target_hash, algorithm, mode, status, attempts, elapsed_ms, worker_count, and matched_plaintext.
+- `history [--limit N]` lists records newest first; `export PATH [--format csv|json]` writes all records with columns run_id, started_at, completed_at, target_hash, algorithm, mode, status, attempts, elapsed_ms, worker_count, matched_plaintext, salt, batch_id, plaintext_withheld, and target_count. The CSV contains one row per run plus one row per hashlist batch summary (batch rows fill only batch_id, mode, status, attempts, elapsed_ms, worker_count, started_at, and target_count); the JSON file is an object with `runs` and `batches` arrays.
 - Before an audit starts, the CLI prints the sensitive-data retention warning and requires typing `yes`; `--yes` acknowledges non-interactively for scripted use. If the operator declines, the audit does not start.
 - Storage failures after a finished audit are reported with exit code 3 and the run's terminal status is still printed; the run is not silently lost.
 
@@ -112,8 +118,10 @@ hashcrack serve [--port PORT]
 ## Pause / Resume (dashboard)
 
 - Dashboard jobs can pause (`POST /api/audits/{id}/pause`) and resume
-  (`POST /api/audits/{id}/resume`) with exact attempt accounting; pause is
-  refused for rule-expanded and hashlist runs. Resuming a dictionary run
+  (`POST /api/audits/{id}/resume`) with exact attempt accounting. Single-target
+  and hashlist runs (dictionary or brute-force) are supported, including
+  rule-expanded streams; a resumed hashlist continues from the paused pass and
+  keeps every target matched before the pause. Resuming a dictionary run
   verifies the uploaded wordlist is unchanged.
 
 ## Plaintext Handling
