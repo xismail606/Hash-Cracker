@@ -314,6 +314,7 @@ class HashlistResult:
     workers: int
     targets: list[dict]
     message: str = ""
+    resume: dict | None = None
 
 
 def _hash_batch_multi(

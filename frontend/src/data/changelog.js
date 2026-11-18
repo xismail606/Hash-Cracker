@@ -19,6 +19,7 @@ export const CHANGELOG = [
       "Plaintext withholding is the default; opt in per run to store the recovered pair",
       "Paused-job artifacts are owner-only, and stale paused records are cleaned after 7 days",
       "Frontend quality: ESLint + Vitest tests, and a 75% pytest-cov gate in CI",
+      "Mypy type checking is clean and enforced in CI",
       "Engine workers recycle after 1,000 batches to bound long-audit memory",
       "167 automated tests",
     ],

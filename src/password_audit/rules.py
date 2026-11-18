@@ -11,7 +11,7 @@ expressed as dedicated presets rather than a rule language.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 LEET_MAP = str.maketrans({"a": "4", "e": "3", "i": "1", "o": "0", "s": "5"})
 
@@ -47,7 +47,7 @@ def _variants_append_years(word: str) -> list[str]:
     return [f"{word}{year}" for year in range(1990, 2030)]
 
 
-RULE_PRESETS: dict[str, callable] = {
+RULE_PRESETS: dict[str, Callable[[str], list[str]]] = {
     "capitalize": _variants_capitalize,
     "upper": _variants_upper,
     "lower": _variants_lower,
@@ -91,7 +91,7 @@ def list_rules_presets() -> list[dict]:
     ]
 
 
-def resolve_rules_preset(name: str) -> callable:
+def resolve_rules_preset(name: str) -> Callable[[str], list[str]] | None:
     """Return the variant function for a preset name; raise ValueError if unknown."""
     if name == "none":
         return None
@@ -104,7 +104,7 @@ def resolve_rules_preset(name: str) -> callable:
 
 def iter_rule_expanded(
     batch_source: Iterator[list[str]],
-    variants_for: callable,
+    variants_for: Callable[[str], list[str]] | None,
     budget: int,
 ) -> Iterator[list[str]]:
     """Yield rule-expanded batches, truncated at the candidate budget.
@@ -123,7 +123,7 @@ def iter_rule_expanded(
                 if expanded:
                     yield expanded
                 return
-            for variant in variants_for(word):
+            for variant in (variants_for(word) if variants_for else []):
                 expanded.append(variant)
                 emitted += 1
                 if emitted >= budget:

@@ -108,7 +108,7 @@ except Exception:  # pragma: no cover - fallback path for Python 3.13+
 
     _ADAPTIVE_HANDLERS = {}
 
-    def verify_candidate(candidate: str, algorithm: str, target: str, salt=None) -> bool:
+    def verify_candidate(candidate: str, algorithm: str, target: str, salt: str | None = None) -> bool:
         """Adaptive verification requires Passlib; unavailable without it."""
         raise ValueError(
             "Adaptive formats require Passlib, which could not be imported on "

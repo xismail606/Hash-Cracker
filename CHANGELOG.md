@@ -72,6 +72,8 @@ release. Each item below states the symptom and the resolution.
   (`npm run lint`, `npm test`) covering the audit form, server-driven rule
   presets, and server algorithm labels; both run in CI.
 - A pytest-cov coverage gate (`fail_under = 75`) runs in CI.
+- Mypy static type checking (`check_untyped_defs`, clean across the package)
+  runs as a CI job; `mypy` and `types-passlib` are in the dev extras.
 
 ### Changed
 

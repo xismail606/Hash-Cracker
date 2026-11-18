@@ -198,7 +198,7 @@ def record_run(
             ),
         )
         conn.commit()
-        return int(cursor.lastrowid)
+        return int(cursor.lastrowid or 0)
     except sqlite3.Error as exc:
         raise HistoryError(f"Cannot write the audit record to local history: {exc}") from exc
 
@@ -363,7 +363,7 @@ def decrypt_stored(key: bytes, stored: str) -> str:
 
 
 def is_encrypted_value(value: str | None) -> bool:
-    return bool(value) and value.startswith(ENCRYPT_PREFIX)
+    return value is not None and value.startswith(ENCRYPT_PREFIX)
 
 
 def export_rows(conn: sqlite3.Connection) -> list[dict]:
