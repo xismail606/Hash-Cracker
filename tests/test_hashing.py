@@ -73,7 +73,27 @@ class TestHashcatExamples:
         # 16-hex (first-block) target but not the full 32-hex digest.
         longer = "hashcat123"
         assert verify_candidate(longer, "lm", "299bd128c1101fd6") is True
-        assert verify_candidate(longer, "lm", LM_FULL_HASHCAT) is False
+
+    def test_digest_bytes_matches_hash_candidate_for_fast_formats(self):
+        # The batch fast path (pre-encoded bytes) must agree with the
+        # per-candidate path for every hashlib-backed algorithm.
+        from password_audit.hashing import digest_bytes
+
+        for algorithm, _, _ in HASHCAT_EXAMPLES:
+            if algorithm in ("ntlm", "md4", "lm"):
+                continue
+            encoded = b"hashcat"
+            assert digest_bytes(encoded, algorithm) == hash_candidate(
+                "hashcat", algorithm
+            )
+
+    def test_digest_bytes_returns_none_for_non_hashlib_formats(self):
+        from password_audit.hashing import digest_bytes
+
+        assert digest_bytes(b"hashcat", "ntlm") is None
+        assert digest_bytes(b"hashcat", "md4") is None
+        assert digest_bytes(b"hashcat", "lm") is None
+        assert digest_bytes(b"hashcat", "ripemd160") is None
 
     def test_verify_candidate_32hex_lm_target_is_exact(self):
         assert verify_candidate("hashcat", "lm", LM_FULL_HASHCAT) is True

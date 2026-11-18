@@ -46,6 +46,8 @@ from .engine import (
     STATUS_NO_MATCH,
     STATUS_STORAGE_ERROR,
     EngineInputError,
+    HashlistResult,
+    RunResult,
     clamp_workers,
     run_audit,
     run_hashlist_audit,
@@ -254,6 +256,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
         print(f"Hashlist  : {len(targets)} targets")
         print(f"Workers   : {workers}")
     else:
+        assert algorithm is not None
         print(f"Algorithm : {algorithm.upper()}")
         print(f"Workers   : {workers}")
     if args.mode == "brute-force":
@@ -293,6 +296,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
         last_progress_at[0] = now
 
     print("Starting audit; press Ctrl+C to interrupt...")
+    result: RunResult | HashlistResult
     try:
         if targets is not None:
             result = run_hashlist_audit(
@@ -305,6 +309,8 @@ def cmd_audit(args: argparse.Namespace) -> int:
                 progress_callback=progress,
             )
         else:
+            assert isinstance(result, RunResult)
+            assert target_hash is not None and algorithm is not None
             result = run_audit(
                 target_hash,
                 algorithm,
@@ -328,6 +334,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
     print(f"Workers   : {result.workers}")
 
     if targets is not None:
+        assert isinstance(result, HashlistResult)
         matched_count = sum(1 for t in result.targets if t["status"] == STATUS_MATCH)
         print(f"Targets   : {matched_count}/{len(result.targets)} matched")
         for t in result.targets:
@@ -337,13 +344,16 @@ def cmd_audit(args: argparse.Namespace) -> int:
                 f"  [{mark}] {t['algorithm']:<16} {t['hash'][:20]}...  "
                 f"plaintext={plaintext}"
             )
-    elif result.status == STATUS_MATCH:
-        print(f"Plaintext : {result.matched_plaintext}")
-        print(f"Hash      : {target_hash}")
-        print(
-            "The recovered plaintext/hash pair above was saved to local SQLite\n"
-            "history as sensitive audit data."
-        )
+    else:
+        assert isinstance(result, RunResult)
+        assert target_hash is not None and algorithm is not None
+        if result.status == STATUS_MATCH:
+            print(f"Plaintext : {result.matched_plaintext}")
+            print(f"Hash      : {target_hash}")
+            print(
+                "The recovered plaintext/hash pair above was saved to local SQLite\n"
+                "history as sensitive audit data."
+            )
 
     plaintext_key = None
     if getattr(args, "encrypt", False):
@@ -370,6 +380,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
     try:
         conn = connect(args.database)
         if targets is not None:
+            assert isinstance(result, HashlistResult)
             batch_id = uuid.uuid4().hex
             record_batch(
                 conn,
@@ -406,6 +417,8 @@ def cmd_audit(args: argparse.Namespace) -> int:
                 )
             print(f"Batch     : {batch_id[:8]} ({len(result.targets)} target records)")
         else:
+            assert isinstance(result, RunResult)
+            assert target_hash is not None and algorithm is not None
             record_run(
                 conn,
                 target_hash=target_hash,
@@ -486,6 +499,10 @@ def cmd_history(args: argparse.Namespace) -> int:
         try:
             conn = connect(args.database)
             passphrase = _resolve_passphrase(args, confirm=False)
+            if passphrase is None:
+                print("No passphrase provided; the history stays as it is.",
+                      file=sys.stderr)
+                return EXIT_INVALID
             plaintext_key = init_encryption(conn, passphrase)
             conn.close()
         except HistoryError as exc:

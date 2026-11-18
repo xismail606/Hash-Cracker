@@ -30,6 +30,21 @@ class TestParseHashlist:
         with pytest.raises(HashInputError, match="more than one supported format"):
             parse_hashlist(path)
 
+    def test_uppercase_and_prefixed_hashes_are_normalized(self, tmp_path):
+        # Targets are normalized to lowercase before the digest map is
+        # built; an uppercase hash must still match, not fail silently.
+        path = tmp_path / "list.txt"
+        path.write_text(
+            "MD5:8743B52063CD84097A65D1633F5C74F5\n"
+            "sha256:127E6FBFE24A750E72930C220A8E138275656B8E5D8F48A98C3C92DF2CABA935\n",
+            encoding="utf-8",
+        )
+        entries = parse_hashlist(path)
+        assert [e["hash"] for e in entries] == [
+            "8743b52063cd84097a65d1633f5c74f5",
+            "127e6fbfe24a750e72930c220a8e138275656b8e5d8f48a98c3c92df2caba935",
+        ]
+
     def test_unknown_algorithm_rejected_with_line_number(self, tmp_path):
         path = tmp_path / "list.txt"
         path.write_text("rot13:abcdef\n", encoding="utf-8")

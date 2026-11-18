@@ -541,6 +541,7 @@ def create_app(
         if error is not None:
             status = 413 if "256 MiB" in error["error"] else 400
             raise AuditPreparationError(error["error"], status)
+        assert temp_path is not None
         batch_source = iter_wordlist_batches(temp_path)
         budget = None
         if variants_for is not None:
@@ -657,6 +658,7 @@ def create_app(
         temp_hashlist, error = _save_upload(hashlist_file)
         if error is not None:
             raise AuditPreparationError(error["error"])
+        assert temp_hashlist is not None
         try:
             return parse_hashlist(temp_hashlist), temp_hashlist
         except HashInputError as exc:
@@ -766,7 +768,7 @@ def create_app(
         except AuditPreparationError as exc:
             return jsonify({"error": str(exc)}), exc.status_code
         job, error = _start_job(job_request)
-        if error is not None:
+        if job is None or error is not None:
             _remove_temp_file(job_request.source.temp_path)
             _remove_temp_file(job_request.temp_hashlist)
             return jsonify(error), 409

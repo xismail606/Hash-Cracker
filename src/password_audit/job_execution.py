@@ -198,6 +198,7 @@ class AuditJobRunner:
 
     def _execute_hashlist(self):
         source = self.request.source
+        assert self.request.targets is not None
         return run_hashlist_audit(
             self.request.targets,
             source.batch_source,

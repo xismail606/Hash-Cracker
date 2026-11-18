@@ -446,7 +446,7 @@ LICENSE.md
 pyproject.toml
 setup.ps1 / setup.sh          # one-command setup (Windows / Linux-macOS)
 serve.ps1 / serve.sh          # dashboard launch shortcuts
-.github/workflows/ci.yml      # pytest (3 OS/Python legs), ruff lint, frontend build
+.github/workflows/ci.yml      # pytest (3 OS/Python legs), ruff lint, mypy typecheck, frontend lint/tests/build
 src/password_audit/
 ├── __init__.py
 ├── __main__.py
@@ -555,7 +555,7 @@ The `benchmark` command measures per-algorithm candidates per second on the curr
 - The specification, design documents, contracts, and both task plans are complete; all 33 v1 tasks and the v2 expansion tasks (T034–T076) are implemented and marked done in their `tasks.md` files.
 - The Python package (`src/password_audit/`) provides hash identification (including salted, adaptive, RIPEMD-160, and SHA-512/224+/256 formats), dictionary/brute-force/hashlist auditing, mutation rules, multiprocessing, the benchmark command, pause/resume, the CLI, the Flask API, and SQLite history with optional at-rest encryption.
 - The Astro/React/Tailwind dashboard builds into `src/password_audit/static/` and is served by the loopback Flask server; it adds pause/resume, ETA, CSV/JSON export, plaintext-withholding and encryption controls, and history unlock.
-- Behavior is checked by the 167-test pytest suite (with a pytest-cov gate at 75%) running on Windows and Ubuntu via GitHub Actions CI, plus ruff, frontend ESLint/Vitest, and a frontend build job.
+- Behavior is checked by the 167-test pytest suite (with a pytest-cov gate at 75%) running on Windows and Ubuntu via GitHub Actions CI, plus ruff, mypy type checking, frontend ESLint/Vitest, and a frontend build job.
 
 ## License
 

@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .bruteforce import DEFAULT_BUDGET, HARD_MAX_BUDGET
-from .hashing import hash_candidate, verify_candidate
+from .hashing import digest_bytes, hash_candidate, verify_candidate
 
 MIN_WORKERS = 1
 MAX_WORKERS = 8
@@ -314,6 +314,7 @@ class HashlistResult:
     workers: int
     targets: list[dict]
     message: str = ""
+    resume: dict | None = None
 
 
 def _hash_batch_multi(
@@ -339,8 +340,12 @@ def _hash_batch_multi(
     )
     matched: dict[int, tuple[int, str]] = {}
     for index, candidate in enumerate(batch):
+        # Encode once per candidate, not once per target algorithm.
+        encoded = candidate.encode("utf-8")
         for algorithm, digest_map in targets_by_algorithm.items():
-            digest = hash_candidate(candidate, algorithm)
+            digest = digest_bytes(encoded, algorithm)
+            if digest is None:
+                digest = hash_candidate(candidate, algorithm)
             for target_id in digest_map.get(digest, ()):
                 matched.setdefault(target_id, (index, candidate))
             prefix_map = (prefix_targets or {}).get(algorithm)
