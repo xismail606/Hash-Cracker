@@ -18,21 +18,23 @@ Set-Location $root
 
 function Step($msg) { Write-Host "[setup] $msg" -ForegroundColor Cyan }
 
-# Preflight Python before installing or changing the frontend toolchain.
-Step "Checking Python (3.11+)..."
-try {
-    $pyVersion = & python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
-    if ($LASTEXITCODE -ne 0) { throw "Python version check failed" }
-} catch {
-    Write-Host "ERROR: Python 3.11+ was not found on PATH. Install Python, then rerun setup." -ForegroundColor Red
-    exit 1
+# Preflight Python only when the Python backend may be installed.
+if ($Backend -ne "rust") {
+    Step "Checking Python (3.11+)..."
+    try {
+        $pyVersion = & python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+        if ($LASTEXITCODE -ne 0) { throw "Python version check failed" }
+    } catch {
+        Write-Host "ERROR: Python 3.11+ was not found on PATH. Install Python, then rerun setup." -ForegroundColor Red
+        exit 1
+    }
+    $major, $minor = $pyVersion.Split(".")
+    if ([int]$major -lt 3 -or ([int]$major -eq 3 -and [int]$minor -lt 11)) {
+        Write-Host "ERROR: Python $pyVersion found; 3.11+ is required." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "  Python $pyVersion OK"
 }
-$major, $minor = $pyVersion.Split(".")
-if ([int]$major -lt 3 -or ([int]$major -eq 3 -and [int]$minor -lt 11)) {
-    Write-Host "ERROR: Python $pyVersion found; 3.11+ is required." -ForegroundColor Red
-    exit 1
-}
-Write-Host "  Python $pyVersion OK"
 
 function Find-FrontendToolchain {
     $nodeCommand = Get-Command node.exe -ErrorAction SilentlyContinue

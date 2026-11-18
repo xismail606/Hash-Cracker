@@ -103,26 +103,28 @@ install_node_toolchain() {
     fi
 }
 
-# Preflight all runtimes before installing or changing anything.
-step "Checking Python (3.11+)..."
-PYTHON=""
-for candidate in python3 python; do
-    if candidate_version=$($candidate -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null); then
-        PYTHON="$candidate"
-        py_version="$candidate_version"
-        break
+# Preflight Python only when the Python backend may be installed.
+if [ "$backend" != "rust" ]; then
+    step "Checking Python (3.11+)..."
+    PYTHON=""
+    for candidate in python3 python; do
+        if candidate_version=$($candidate -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null); then
+            PYTHON="$candidate"
+            py_version="$candidate_version"
+            break
+        fi
+    done
+    if [ -z "$PYTHON" ]; then
+        echo "ERROR: Python 3.11+ is missing. Install Python, then rerun setup." >&2
+        exit 1
     fi
-done
-if [ -z "$PYTHON" ]; then
-    echo "ERROR: Python 3.11+ is missing. Install Python, then rerun setup." >&2
-    exit 1
+    major="${py_version%%.*}"; minor="${py_version##*.}"
+    if [ "$major" -lt 3 ] || { [ "$major" -eq 3 ] && [ "$minor" -lt 11 ]; }; then
+        echo "ERROR: Python $py_version found; 3.11+ is required." >&2
+        exit 1
+    fi
+    echo "  Python $py_version OK"
 fi
-major="${py_version%%.*}"; minor="${py_version##*.}"
-if [ "$major" -lt 3 ] || { [ "$major" -eq 3 ] && [ "$minor" -lt 11 ]; }; then
-    echo "ERROR: Python $py_version found; 3.11+ is required." >&2
-    exit 1
-fi
-echo "  Python $py_version OK"
 
 # Only after preflight, install the missing frontend runtime if needed.
 if [ "$skip_frontend" = false ] && [ "$backend" != "rust" ]; then
