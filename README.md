@@ -554,7 +554,7 @@ powershell -ExecutionPolicy Bypass -File .\setup.ps1
 # ./setup.sh --backend both      (python | rust | both; bare Enter = python)
 ```
 
-Both scripts are idempotent (safe to re-run), install the frontend toolchain if needed, use the frontend lockfile for a repeatable install, and run the test suite at the end. They install a user-local `hashcrack` launcher so the CLI works from any directory without activating `.venv`; open a new terminal if setup added the launcher directory to PATH. If you only need the CLI/backend, `setup.ps1 -SkipFrontend` / `./setup.sh --skip-frontend` skips the frontend installation and build.
+Both scripts are idempotent (safe to re-run), install the frontend toolchain if needed, use the frontend lockfile for a repeatable install, and run the test suite at the end. They install user-local CLI launchers (`hashcrack` and, on Linux, `hashcrack-rs`) so the commands work from any directory without activating `.venv`; open a new terminal if setup added the launcher directory to PATH. If you only need the CLI/backend, `setup.ps1 -SkipFrontend` / `./setup.sh --skip-frontend` skips the frontend installation and build.
 
 **Phase 11 — choose the backend at install time:** the scripts ask which backend to install — Python, Rust, or Both (bare Enter = Python). Pass `--backend python|rust|both` (`-Backend` on PowerShell) to skip the prompt. The Rust path provisions the rustup toolchain automatically when missing and builds the `hashcrack-rs` CLI and server from `rust/`; installing one backend never removes the other.
 

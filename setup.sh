@@ -257,6 +257,30 @@ install_rust_backend() {
     for name in hashcrack-rs hashcrack-rs.exe; do
         if [ -x "rust/target/release/$name" ]; then
             step "Rust backend installed: rust/target/release/$name"
+            if [ "$(uname -s)" = "Linux" ]; then
+                user_bin="$HOME/.local/bin"
+                launcher="$user_bin/hashcrack-rs"
+                mkdir -p "$user_bin"
+                printf '#!/usr/bin/env bash\nexec %q "$@"\n' "$root/rust/target/release/$name" > "$launcher"
+                chmod 755 "$launcher"
+                case ":$PATH:" in
+                    *":$user_bin:"*) ;;
+                    *)
+                        shell_name="$(basename "${SHELL:-bash}")"
+                        case "$shell_name" in
+                            zsh) shell_profile="$HOME/.zshrc" ;;
+                            bash) shell_profile="$HOME/.bashrc" ;;
+                            *) shell_profile="$HOME/.profile" ;;
+                        esac
+                        path_line='export PATH="$HOME/.local/bin:$PATH"'
+                        if ! [ -f "$shell_profile" ] || ! grep -F -q "$path_line" "$shell_profile"; then
+                            printf '\n# User-local command-line tools\n%s\n' "$path_line" >> "$shell_profile"
+                        fi
+                        echo "[setup] Added $user_bin to PATH in $shell_profile. Open a new terminal or run: source $shell_profile"
+                        ;;
+                esac
+                step "Installed the local command: hashcrack-rs"
+            fi
             return 0
         fi
     done
@@ -284,10 +308,10 @@ echo "Setup complete!"
 echo
 if [ "$backend" = "rust" ]; then
     echo "Run the dashboard:   ./serve.sh --backend rust  (http://127.0.0.1:8765)"
-    echo "Run the CLI:         hashcrack-rs --help"
+    echo "Run the CLI:         hashcrack-rs --help (open a new terminal if ~/.local/bin was added to PATH)"
 elif [ "$backend" = "both" ]; then
     echo "Run the dashboard:   ./serve.sh            (asks: Python or Rust)"
-    echo "Run the CLI:         hashcrack --help | hashcrack-rs --help"
+    echo "Run the CLI:         hashcrack --help | hashcrack-rs --help (open a new terminal if ~/.local/bin was added to PATH)"
 else
     echo "Run the dashboard:   ./serve.sh            (http://127.0.0.1:8765)"
     echo "Run the CLI:         hashcrack --help (from any directory)"

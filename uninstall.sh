@@ -7,6 +7,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 user_bin="$HOME/.local/bin"
 launcher="$user_bin/hashcrack"
+rust_launcher="$user_bin/hashcrack-rs"
 
 echo "This will remove the Hash Cracker launcher and installed dependencies."
 echo "Project files and audit history in $HOME/.hash_cracker will be kept."
@@ -19,6 +20,10 @@ esac
 if [ -f "$launcher" ]; then
     rm -- "$launcher"
     echo "Removed command launcher: $launcher"
+fi
+if [ -f "$rust_launcher" ]; then
+    rm -- "$rust_launcher"
+    echo "Removed command launcher: $rust_launcher"
 fi
 
 # setup.sh adds this exact line when it adds ~/.local/bin to PATH.
