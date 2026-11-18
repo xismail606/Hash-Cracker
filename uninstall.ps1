@@ -46,3 +46,7 @@ foreach ($target in $targets) {
 }
 
 Write-Host "Uninstall complete. Audit history and project files were kept." -ForegroundColor Green
+# Phase 11: the Rust backend lives in the project tree (rust	arget); the
+# rustup toolchain (~\.cargo, ~\.rustup) is a user-local install that other
+# Rust projects may share - remove it manually only if desired:
+#   rustup self uninstall

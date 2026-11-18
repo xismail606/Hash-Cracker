@@ -1,0 +1,24 @@
+[package]
+name = "hc-history"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Shared SQLite audit history: records, encryption at rest, exports, paused-job sidecar"
+
+[dependencies]
+rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+aes = { workspace = true }
+cbc = { workspace = true }
+hmac = { workspace = true }
+digest = { workspace = true }
+sha2 = { workspace = true }
+scrypt = { workspace = true }
+hex = { workspace = true }
+base64 = { workspace = true }
+rand = { workspace = true }
+time = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

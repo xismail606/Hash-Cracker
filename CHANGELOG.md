@@ -2,8 +2,107 @@
 
 All notable changes to the Hash Cracker project are documented here.
 Dates use YYYY-MM-DD. The project follows the four-phase v1 plan
-([specs/001-offline-password-audit](specs/001-offline-password-audit)) and the
-v2 feature-expansion plan ([specs/002-feature-expansion](specs/002-feature-expansion)).
+([specs/001-offline-password-audit](specs/001-offline-password-audit)), the
+v2 feature-expansion plan ([specs/002-feature-expansion](specs/002-feature-expansion)),
+and the Phase 11 Rust-backend round ([specs/003-rust-backend](specs/003-rust-backend)).
+
+## v3.1.0 — 2026-11-18 (Rust Backend — Phase 11)
+
+Phase 11 adds a **second backend written in Rust alongside the existing Python
+one** — neither replaces the other. Both install side by side, share one audit
+history store, and every entry point (installer, server launcher, dashboard,
+CLI) asks which backend to use. The round is specified in
+[specs/003-rust-backend/](specs/003-rust-backend/) (tasks T077–T115) with
+byte-pinned parity contracts for the REST API, the CLI surface, storage, and
+the install/serve scripts.
+
+### Added
+
+- **Rust backend workspace** (`rust/`, crates `hc-core`, `hc-history`,
+  `hc-server`, `hc-cli`): the full auditing engine as a functional twin of the
+  Python one — all 23 formats (fast, salted, adaptive), dictionary mode with
+  UTF-8 replacement semantics, bounded brute-force with the pinned charset
+  presets, hashlist multi-target audits with the 16-hex LM prefix rule,
+  mutation rules with exact budget truncation, candidate-level attempt
+  accounting (match freezes attempts at `offset + match_index + 1`),
+  pause/resume offsets, adaptive backoff waits, and the in-process benchmark.
+  Every format is validated against Python-generated example vectors.
+- **`hashcrack-rs` CLI** mirroring the Python CLI flag-for-flag
+  (identify, audit, history, export, benchmark, serve), with the same exit
+  codes (0 ok / 1 invalid / 2 cancelled / 3 storage), the same output
+  sections, the retention-warning acknowledgement flow, `--encrypt` with the
+  passphrase chain (`--passphrase` → `PASSWORD_AUDIT_PASSPHRASE` → prompt),
+  and `--no-store-plaintext`.
+- **Rust dashboard server** (axum, loopback-only, port 8765) exposing the
+  same REST contract as the Flask app: `GET /api/session` with the
+  `pa_csrf` double-submit cookie, CSRF enforcement with the same-host
+  Origin/Referer check (`/api/identify` exempt), `GET /api/formats` with the
+  pinned 23-format registry, multipart audit submission with the same
+  validation messages and the 256 MiB cap, the single-job 409, job polling
+  with identical result shapes, pause/resume/cancel writing the same
+  `paused_jobs/<job_id>.json` sidecar (moved uploads, 7-day retention,
+  restart recovery), history/unlock/export/clear, and static serving with the
+  clean-URL directory convention and the 503 build hint. The built React
+  dashboard runs unchanged against either backend.
+- **Backend choice at install**: `setup.sh`/`setup.ps1` gain
+  `--backend python|rust|both` and an interactive prompt (bare Enter keeps
+  Python as the default; non-interactive runs without the flag fail with
+  usage). The Rust path provisions the rustup toolchain automatically when
+  missing (mirroring the Node.js provisioning pattern), runs
+  `cargo build --release`, and installs `hashcrack-rs` next to the venv
+  entry points.
+- **Backend choice at serve**: `serve.sh`/`serve.ps1` gain
+  `--backend python|rust` and an interactive prompt when both backends are
+  installed (bare Enter = Python). With only one backend installed the
+  scripts start it with a note instead of failing; with neither they print
+  the setup instructions. Non-interactive runs never prompt.
+- **Shared audit history with attribution**: both backends read and write the
+  same SQLite store. `audit_runs` gained an additive `backend` column via the
+  established migration mechanism (pre-existing rows display as `python`);
+  the field appears in `/api/history` and in both export formats.
+- **Cross-backend plaintext encryption**: the Rust side implements the exact
+  scrypt (N=16384, r=8, p=1, dklen=32) + Fernet (AES-128-CBC + HMAC-SHA256)
+  scheme in pure Rust (no OpenSSL dependency). A record encrypted by one
+  backend unlocks with the other; Rust emits padded Fernet tokens to match
+  the Python `cryptography` version's expectations, and Python's unlock
+  accepts both padded and unpadded base64.
+- **Cross-backend parity tests** (`tests/test_rust_parity.py`): a run
+  recorded by one backend is readable by the other, CSV exports are
+  byte-identical, and encrypted records unlock across backends. The file
+  skips with a clear message when the Rust binary has not been built.
+- Rust crates version their binaries `3.1.0` alongside the Python package.
+
+### Changed
+
+- The CSV export column order gains `backend` between `plaintext_withheld`
+  and `target_count`; the JSON export's run records carry `backend`.
+- `pyproject.toml`, the package, `frontend/package.json`, and the Rust
+  workspace all advertise `3.1.0`.
+- The repository README documents the Phase 11 round, the backend prompts,
+  and the `rust/` workspace layout.
+
+### Tests
+
+- **115 Rust tests** (`cargo test`): digest vectors for every fast/salted
+  format (Python-generated), adaptive verification against Passlib vectors,
+  identification messages, candidate sources, brute-force enumeration, rule
+  expansion truncation, engine attempt accounting (budget truncation,
+  full-coverage `no_match`, pause/resume offsets, cancel precedence,
+  hashlist sweeps), the shared store including cross-migration of a
+  pre-Phase-11 database, encryption round-trips plus a Python-produced
+  Fernet fixture, the full REST contract through the router (session/CSRF,
+  formats, identify, submit validation messages, audit lifecycle,
+  pause/resume with the sidecar, single-slot 409, cancel, history,
+  unlock, export headers, static serving), and CLI unit tests.
+- **175 pytest tests**: the existing suite plus the 4 cross-backend parity
+  tests (171 + 4); the suite stays green with or without the Rust binary
+  built (parity tests skip cleanly).
+- **Benchmark (SC-007)**: measured on the same machine with 1-second slices,
+  the Rust backend is at or above the Python backend on all 12 fast-hash
+  formats (md5 3.6×, sha1 4.4×, ntlm 84×, lm 106×, ripemd160 290× — the
+  extreme ratios come from Python's pure-Python fallbacks on OpenSSL 3);
+  the full table lives in
+  [specs/003-rust-backend/quickstart.md](specs/003-rust-backend/quickstart.md).
 
 ## v3.0.0 — 2026-11-17 (Maintenance Round)
 

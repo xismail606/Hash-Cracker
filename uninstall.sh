@@ -41,3 +41,7 @@ for target in "$root/.venv" "$root/frontend/node_modules"; do
 done
 
 echo "Uninstall complete. Audit history and project files were kept."
+# Phase 11: the Rust backend lives in the project tree (rust/target); the
+# rustup toolchain (~/.cargo, ~/.rustup) is a user-local install that other
+# Rust projects may share - remove it manually only if desired:
+#   rustup self uninstall

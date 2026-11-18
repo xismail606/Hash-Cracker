@@ -11,9 +11,9 @@
 
 [![CI](https://github.com/xismail606/hash-cracker/actions/workflows/ci.yml/badge.svg)](https://github.com/xismail606/hash-cracker/actions/workflows/ci.yml)
 
-A Python-based offline hash-cracking and password-auditing project. It identifies supported hash formats, compares a target against either a supplied dictionary or a bounded brute-force search, provides both a CLI and local web dashboard, and stores audit results in SQLite.
+An offline hash-cracking and password-auditing project with **two coexisting backends — Python and Rust**. It identifies supported hash formats, compares a target against either a supplied dictionary or a bounded brute-force search, provides both a CLI and local web dashboard, and stores audit results in SQLite. You choose which backend to install and which one serves the dashboard; both share the same audit history.
 
-> **Project status: Implemented.** All 33 v1 tasks and the v2 feature expansion (salted formats, hashlists, mutation rules, benchmark, pause/resume, dashboard export/ETA, plaintext withholding/encryption, RIPEMD-160 and adaptive formats) are complete, backed by a 167-test pytest suite and CI. See the [quickstart](specs/001-offline-password-audit/quickstart.md) for setup and validated scenarios.
+> **Project status: Implemented.** All 33 v1 tasks, the v2 feature expansion (salted formats, hashlists, mutation rules, benchmark, pause/resume, dashboard export/ETA, plaintext withholding/encryption, RIPEMD-160 and adaptive formats), the v3 maintenance round, and the Phase 11 Rust backend (two coexisting backends with install/serve backend prompts, a shared audit store, and cross-backend encryption) are complete — backed by a 175-test pytest suite (including cross-backend parity tests), a 115-test Rust suite, and CI. See the [Phase 11 quickstart](specs/003-rust-backend/quickstart.md) for setup and validated scenarios.
 
 ## Project Overview
 
@@ -102,15 +102,22 @@ Go and Python can be used together, but the current plan does not use Go. Python
 
 ```mermaid
 flowchart LR
-    CLI[Python CLI] --> CORE[Shared Python audit engine]
-    UI[Astro and React dashboard] --> API[Loopback Flask API]
-    API --> CORE
+    subgraph backends[Choose a backend at install and serve time]
+        PY[Python backend<br>hashcrack CLI + Flask API]
+        RS[Rust backend<br>hashcrack-rs CLI + axum API]
+    end
+    UI[Astro and React dashboard] --> PY
+    UI --> RS
+    PY --> CORE[Same REST contract<br>Same engine semantics]
+    RS --> CORE
     CORE --> DICT[Local wordlist]
     CORE --> BF[Bounded brute-force generator]
-    CORE --> DB[(Local SQLite history)]
+    CORE --> DB[(Shared local SQLite history)]
 ```
 
 ## Usage Guide
+
+Every command below works verbatim on both CLIs — `hashcrack` (Python) and `hashcrack-rs` (Rust) — against the same shared history.
 
 After running the setup script on Windows or Linux, the `hashcrack` command
 works from any directory. With a manual install, activate `.venv` first.
@@ -138,11 +145,12 @@ with `./serve.sh` on Linux/macOS or `.\serve.ps1` on Windows.
 
 ```bash
 hashcrack identify 8743b52063cd84097a65d1633f5c74f5
-# → 32-hex shapes are ambiguous: MD5 / NTLM / MD4 — choose explicitly
-hashcrack identify 127e6fbf...  # 64-hex: SHA-256 or SHA-512/256
-hashcrack identify b89eaac7...  # 40-hex: SHA-1 or RIPEMD-160
+# → 32-hex shapes are ambiguous: MD5 / NTLM / MD4 / LM — choose explicitly
+hashcrack identify 127e6fbfe24a750e72930c220a8e138275656b8e5d8f48a98c3c92df2caba935  # 64-hex: SHA-256 or SHA-512/256
+hashcrack identify b89eaac7e61417341b710b727768294d0e6a277b  # 40-hex: SHA-1 or RIPEMD-160
 hashcrack identify 299bd128c1101fd6  # 16-hex: LM
-hashcrack identify '$2a$05$...'  # prefix-recognized: bcrypt
+hashcrack identify '$2a$05$...'  # prefix-recognized: bcrypt (any $2-prefixed string)
+# every command below also works verbatim with the Rust CLI: hashcrack-rs identify ...
 ```
 
 Supported shapes: LM (16 or 32), MD5/NTLM/MD4 (32, ambiguous), SHA-1/RIPEMD-160 (40,
@@ -215,9 +223,10 @@ rejected for unsalted formats.
 ### 5. Hashlist — many targets, one pass
 
 ```text
-# targets.txt — one per line; prefix the ambiguous 32-hex shapes
+# targets.txt — one per line; bare lines must resolve to exactly one format
+# (32-hex and 64-hex shapes are ambiguous — always prefix them)
 md5:8743b52063cd84097a65d1633f5c74f5
-127e6fbfe24a750e72930c220a8e138275656b8e5d8f48a98c3c92df2caba935
+sha256:127e6fbfe24a750e72930c220a8e138275656b8e5d8f48a98c3c92df2caba935
 ntlm:b4b9b02e6f09a9bd760f388b67351e2b
 ```
 
@@ -266,7 +275,9 @@ choices (informational; never stored).
 ### 9. Dashboard
 
 ```bash
-.\serve.ps1              # from the project folder on Windows; ./serve.sh on Linux/macOS
+.\serve.ps1              # Windows; ./serve.sh on Linux/macOS
+# both installed? the script asks: [1] Python [2] Rust (Enter=Python)
+# .\serve.ps1 -Backend rust   /   ./serve.sh --backend rust   # skip the prompt
 ```
 
 Open `http://127.0.0.1:8765`. The dashboard offers hash identification with
@@ -450,8 +461,15 @@ CHANGELOG.md
 LICENSE.md
 pyproject.toml
 setup.ps1 / setup.sh          # one-command setup (Windows / Linux-macOS)
-serve.ps1 / serve.sh          # dashboard launch shortcuts
+serve.ps1 / serve.sh          # dashboard launch shortcuts (ask: Python or Rust backend)
 .github/workflows/ci.yml      # pytest (3 OS/Python legs), ruff lint, mypy typecheck, frontend lint/tests/build
+rust/                         # Phase 11 Rust backend (Cargo workspace)
+├── Cargo.toml
+└── crates/
+    ├── hc-core/              # engine: formats, hashing, candidates, rules, audits, benchmark
+    ├── hc-history/           # shared SQLite store, Fernet encryption, exports, sidecar
+    ├── hc-server/            # axum REST server (same contract as the Flask app)
+    └── hc-cli/               # hashcrack-rs binary (same CLI surface as hashcrack)
 src/hash_cracker/
 ├── __init__.py
 ├── __main__.py
@@ -495,10 +513,23 @@ specs/
 │   └── contracts/
 │       ├── cli.md
 │       └── web.md
-└── 002-feature-expansion/
+├── 002-feature-expansion/
+│   ├── spec.md
+│   ├── plan.md
+│   └── tasks.md
+└── 003-rust-backend/         # Phase 11 (Rust backend, local-only)
     ├── spec.md
     ├── plan.md
-    └── tasks.md
+    ├── research.md
+    ├── data-model.md
+    ├── quickstart.md
+    ├── tasks.md
+    ├── checklists/
+    └── contracts/
+        ├── api.md
+        ├── cli.md
+        ├── storage.md
+        └── installer.md
 ```
 
 This layout is implemented; `static/` holds the Astro build output (gitignored) and is created by `npm run build`.
@@ -509,19 +540,23 @@ Requirements: Python 3.11+, a modern browser, and internet access for the first 
 
 ### One-command setup (recommended)
 
-Download the repository and run the setup script for your platform — it installs Python dependencies (with all extras), Node dependencies, and builds the dashboard:
+Download the repository and run the setup script for your platform — it asks which backend to install (Python, Rust, or Both; bare Enter = Python), installs Python dependencies (with all extras), Node dependencies, and builds the dashboard:
 
 ```powershell
 # Windows
 powershell -ExecutionPolicy Bypass -File .\setup.ps1
+# .\setup.ps1 -Backend both      (python | rust | both; bare Enter = python)
 ```
 
 ```bash
 # Linux / macOS / Git Bash
 ./setup.sh
+# ./setup.sh --backend both      (python | rust | both; bare Enter = python)
 ```
 
 Both scripts are idempotent (safe to re-run), install the frontend toolchain if needed, use the frontend lockfile for a repeatable install, and run the test suite at the end. They install a user-local `hashcrack` launcher so the CLI works from any directory without activating `.venv`; open a new terminal if setup added the launcher directory to PATH. If you only need the CLI/backend, `setup.ps1 -SkipFrontend` / `./setup.sh --skip-frontend` skips the frontend installation and build.
+
+**Phase 11 — choose the backend at install time:** the scripts ask which backend to install — Python, Rust, or Both (bare Enter = Python). Pass `--backend python|rust|both` (`-Backend` on PowerShell) to skip the prompt. The Rust path provisions the rustup toolchain automatically when missing and builds the `hashcrack-rs` CLI and server from `rust/`; installing one backend never removes the other.
 
 ### Manual setup
 
@@ -545,6 +580,8 @@ Shortcut: `.\serve.ps1` starts the dashboard on the venv's interpreter without a
 python3 -m venv .venv
 .venv/bin/python -m pip install -e .
 cd frontend && npm install && npm run build && cd ..
+# optional Rust backend: install rustup (https://rustup.rs), then:
+# cd rust && cargo build --release
 ```
 
 Shortcut: `./serve.sh` starts the dashboard on the venv's interpreter without activating it (`./serve.sh 9000` chooses a port).
@@ -553,14 +590,14 @@ The canonical CLI command is `hashcrack` on all platforms. On Linux and Windows,
 
 ## Performance and Validation
 
-The `benchmark` command measures per-algorithm candidates per second on the current machine so budgets can be sized accordingly. Brute-force search is bounded by its configured candidate budget. The pytest suite (`tests/`, 167 tests plus a POSIX-only artifact-permissions test) checks identification, dictionary and brute-force matching, hashlists, rules, progress accounting, pause/resume (including restart recovery), export, plaintext withholding, encryption, and history behavior with synthetic hashes and candidate data.
+The `benchmark` command measures per-algorithm candidates per second on the current machine so budgets can be sized accordingly. Brute-force search is bounded by its configured candidate budget. The pytest suite (`tests/`, 175 tests including a POSIX-only artifact-permissions test and 4 cross-backend parity tests) checks identification, dictionary and brute-force matching, hashlists, rules, progress accounting, pause/resume (including restart recovery), export, plaintext withholding, encryption, history behavior, and Python↔Rust interop with synthetic hashes and candidate data. The Rust backend adds its own 115-test `cargo test` suite.
 
 ## Current Status
 
 - The specification, design documents, contracts, and both task plans are complete; all 33 v1 tasks and the v2 expansion tasks (T034–T076) are implemented and marked done in their `tasks.md` files.
 - The Python package (`src/hash_cracker/`) provides hash identification (including salted, adaptive, RIPEMD-160, and SHA-512/224+/256 formats), dictionary/brute-force/hashlist auditing, mutation rules, multiprocessing, the benchmark command, pause/resume, the CLI, the Flask API, and SQLite history with optional at-rest encryption.
 - The Astro/React/Tailwind dashboard builds into `src/hash_cracker/static/` and is served by the loopback Flask server; it adds pause/resume, ETA, CSV/JSON export, plaintext-withholding and encryption controls, and history unlock.
-- Behavior is checked by the 167-test pytest suite (with a pytest-cov gate at 75%) running on Windows and Ubuntu via GitHub Actions CI, plus ruff, mypy type checking, frontend ESLint/Vitest, and a frontend build job.
+- Behavior is checked by the 175-test pytest suite (with a pytest-cov gate at 75%) running on Windows and Ubuntu via GitHub Actions CI, plus ruff, mypy type checking, frontend ESLint/Vitest, a frontend build job, and the 115-test Rust `cargo test` suite.
 
 ## License
 
@@ -597,6 +634,18 @@ The v2 round planned in [specs/002-feature-expansion/](specs/002-feature-expansi
 ## Maintenance Round (v3) — Implemented
 
 The v3 round fixed nine defects found during a full review: hashlist audits honor the requested worker count; CSV/JSON exports include hashlist batch rows; paused jobs survive a server restart; the dashboard reads the format registries from `GET /api/formats` instead of duplicating them; CI covers Python 3.11–3.13, ruff, and the frontend build; pause/resume works for hashlist and rule-expanded runs; LM accepts the full 32-hex digest as well as the 16-hex first block; the engine's batch wait uses adaptive backoff instead of a fixed 0.1 s poll; and the documentation matches the implementation. See [CHANGELOG.md](CHANGELOG.md) for the itemized list.
+
+## Rust Backend (Phase 11) — Implemented
+
+The Phase 11 round planned in [specs/003-rust-backend/](specs/003-rust-backend/) adds a **second backend written in Rust alongside the Python one** — neither replaces the other; both install side by side and every entry point asks which one to use:
+
+- **Setup**: `./setup.sh --backend python|rust|both` (or the interactive prompt; bare Enter keeps the Python default). The Rust path provisions the rustup toolchain when missing and builds `rust/target/release/hashcrack-rs`.
+- **Serve**: `./serve.sh --backend rust` (or the interactive prompt) launches either backend on the same loopback port against the same built dashboard — the REST contract is byte-pinned in `specs/003-rust-backend/contracts/api.md`.
+- **CLI**: `hashcrack-rs` mirrors `hashcrack` flag-for-flag (identify, audit, history, export, benchmark, serve) with the same exit codes and output sections.
+- **Shared history**: both backends read and write the same SQLite audit store; records carry a `backend` attribution, CSV/JSON exports are byte-identical, and the scrypt+Fernet plaintext encryption unlocks across backends.
+- **Parity**: all 23 formats, candidate-level attempt accounting, budget/pause/resume semantics, and hashlist rules match the Python engine; 115 Rust tests plus a pytest parity shim validate the seams.
+
+See the [spec](specs/003-rust-backend/spec.md), [plan](specs/003-rust-backend/plan.md), [task breakdown](specs/003-rust-backend/tasks.md) (T077–T115), and the [quickstart](specs/003-rust-backend/quickstart.md).
 
   <!-- ===================== FOOTER ===================== -->
   <div align="center">
