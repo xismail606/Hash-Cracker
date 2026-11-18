@@ -1,13 +1,13 @@
 """Digest adapters for the supported audit algorithms.
 
-MD5, SHA-1, SHA-224, SHA-256, SHA-384, and SHA-512 use Python's ``hashlib``.
-NTLM is MD4 over UTF-16LE encoded input; the plan calls for Passlib's
-``nthash`` implementation. Passlib 1.7.4 fails to import on Python 3.13
-because the standard-library ``crypt`` module was removed, so this module
-uses Passlib when available and falls back to a small pure-Python MD4
-implementation of the same NTLM calculation. MD4 (mode 900, raw MD4 over the
-UTF-8 bytes) reuses the same fallback implementation. LM hashes come from
-Passlib's ``lmhash`` (pure-Python DES; requires Passlib to be importable).
+MD5, SHA-1, SHA-224/256/384/512, and SHA-512/224 or /256 use Python's
+``hashlib`` (via a prebuilt constructor table for the hot path). NTLM is
+MD4 over UTF-16LE encoded input and MD4 (mode 900) is raw MD4 over the
+UTF-8 bytes; both use ``hashlib.new("md4")`` when the local OpenSSL
+provides it (validated once against an RFC 1320 vector) and the bundled
+pure-Python MD4 otherwise, which is several times faster than Passlib's
+wrappers. LM hashes come from Passlib's ``lmhash`` (pure-Python DES;
+requires Passlib to be importable).
 """
 
 from __future__ import annotations
@@ -94,7 +94,7 @@ def hash_candidate(candidate: str, algorithm: str, salt: str | None = None) -> s
     if algorithm == "md4":
         if salt is not None:
             raise ValueError(f"Algorithm {algorithm!r} does not take a salt.")
-        return _md4_hex(candidate.encode("utf-8"))
+        return _MD4_DIGEST(candidate.encode("utf-8")).hex()
     if algorithm == "lm":
         if salt is not None:
             raise ValueError(f"Algorithm {algorithm!r} does not take a salt.")
@@ -113,13 +113,8 @@ def hash_candidate(candidate: str, algorithm: str, salt: str | None = None) -> s
 try:  # pragma: no cover - exercised only on interpreters where Passlib works
     from passlib.hash import bcrypt as _passlib_bcrypt
     from passlib.hash import lmhash as _passlib_lmhash
-    from passlib.hash import nthash as _passlib_nthash
     from passlib.hash import phpass as _passlib_phpass
     from passlib.hash import sha512_crypt as _passlib_sha512crypt
-
-    def ntlm_hash(candidate: str) -> str:
-        """Return the NTLM digest (MD4 of UTF-16LE input) via Passlib."""
-        return _passlib_nthash.hash(candidate).lower()
 
     def lm_hash(candidate: str) -> str:
         """Return the full LAN Manager digest via Passlib (32 hex, lowercase).
@@ -133,10 +128,6 @@ try:  # pragma: no cover - exercised only on interpreters where Passlib works
         return _passlib_lmhash.hash(candidate).lower()
 
 except Exception:  # pragma: no cover - fallback path for Python 3.13+
-    def ntlm_hash(candidate: str) -> str:
-        """Return the NTLM digest using the built-in MD4 fallback."""
-        return _md4_hex(candidate.encode("utf-16-le"))
-
     def lm_hash(candidate: str) -> str:
         """LM hashing requires Passlib; it is unavailable without it."""
         raise ValueError(
@@ -182,6 +173,32 @@ def _md4_digest(data: bytes) -> bytes:
         c0 = (c0 + c) & 0xFFFFFFFF
         d0 = (d0 + d) & 0xFFFFFFFF
     return struct.pack("<4I", a0, b0, c0, d0)
+
+
+def _best_md4_digest() -> Callable[[bytes], bytes]:
+    """Pick the fastest validated MD4 available.
+
+    OpenSSL 3 usually removed MD4 from hashlib; where ``hashlib.new("md4")``
+    works (and reproduces an RFC 1320 vector) it is ~20x faster than the
+    pure-Python implementation, so it is preferred and validated once here.
+    """
+    try:
+        if hashlib.new("md4", b"abc").hexdigest() == "a448017aaf21d8525fc10ae87aa6729d":
+            def hashlib_md4(data: bytes) -> bytes:
+                return hashlib.new("md4", data).digest()
+
+            return hashlib_md4
+    except Exception:  # pragma: no cover - OpenSSL 3 default configuration
+        pass
+    return _md4_digest
+
+
+_MD4_DIGEST = _best_md4_digest()
+
+
+def ntlm_hash(candidate: str) -> str:
+    """Return the NTLM digest: MD4 over the UTF-16LE encoded candidate."""
+    return _MD4_DIGEST(candidate.encode("utf-16-le")).hex()
 
 
 def _f(x: int, y: int, z: int) -> int:

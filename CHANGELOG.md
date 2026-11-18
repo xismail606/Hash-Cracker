@@ -74,6 +74,11 @@ release. Each item below states the symptom and the resolution.
 - A pytest-cov coverage gate (`fail_under = 75`) runs in CI.
 - Mypy static type checking (`check_untyped_defs`, clean across the package)
   runs as a CI job; `mypy` and `types-passlib` are in the dev extras.
+- Faster hot path: prebuilt hashlib constructor table (~23% faster MD5,
+  ~15% faster SHA-512), one UTF-8 encode per candidate in hashlist batches,
+  and NTLM/MD4 hashing that bypasses Passlib (~3x faster NTLM; uses
+  `hashlib` MD4 where OpenSSL provides it, the bundled RFC 1320-verified
+  pure-Python MD4 otherwise).
 
 ### Changed
 
